@@ -38,55 +38,73 @@ Mainstream platforms (Spotify, Apple Music) optimize for engagement via populari
 
 ### 4.1 Critical Context: Spotify API Deprecation
 
-> **Warning:** Spotify deprecated the `/audio-features` endpoint for all new developer apps on **November 27, 2024** with no migration path. New apps cannot access audio features via the live API.
+> **Warning:** Spotify deprecated the `/audio-features` endpoint for all new developer apps on **November 27, 2024** with no migration path. New apps cannot access audio features via the live API. The Spotify Million Playlist Dataset (MPD) also requires direct approval from Spotify Research and is not reliably accessible.
 
-This eliminates a live-API pipeline. Pre-computed datasets are required.
+This project uses two fully public, pre-computed datasets instead.
 
-### 4.2 Recommended Data Sources
+### 4.2 Chosen Data Sources
 
 | Dataset | Purpose | Access | Size |
 |---------|---------|--------|------|
-| **Million Song Dataset (MSD)** | Audio features (Echo Nest, Spotify-compatible) | Free, public | ~280 GB full / 1 GB subset |
-| **Spotify Million Playlist Dataset (MPD)** | Playlist co-occurrence for triplet loss | Request from [Spotify Research](https://research.atspotify.com/2020/09/the-million-playlist-dataset-remastered) | ~5 GB compressed |
-| **MSD + Last.fm subset** | Simulated user listening history | Free, paired with MSD | ~2 GB |
-| **FMA small/medium** | Fallback if MPD access denied | Free, GitHub | 7 GB / 25 GB |
+| **Kaggle Spotify Tracks Dataset** | All 9 audio features pre-computed as CSV | Kaggle API (free account) | ~50 MB |
+| **Last.fm 1K Users Dataset** | User listening history → session-based triplet construction | [zenodo.org/records/6090214](https://zenodo.org/records/6090214) | ~1 GB TSV |
 
-### 4.3 Data Pipeline Architecture
+**Why this combination:**
+- Kaggle dataset contains the exact Spotify feature set (danceability, energy, valence, etc.) for ~114K tracks — zero HDF5 parsing, immediate use
+- Last.fm 1K has 19M timestamped play events across 992 users — timestamps enable session segmentation without needing explicit playlists
+- Last.fm is the official companion dataset to MSD; artist+track name join is well-documented
+
+### 4.3 Triplet Construction from Last.fm Sessions
+
+No explicit playlists required. Sessions are inferred from timestamps:
 
 ```
-[MSD HDF5 files]          [MPD JSON files]         [Last.fm / simulated users]
-      |                         |                              |
-      v                         v                              v
-[Feature Extraction]    [Playlist Parser]            [User History Parser]
-      |                         |                              |
-      v                         v                              v
-[song_features.parquet] [playlists.parquet]        [user_history.parquet]
-      |                         |                              |
-      +------------+------------+                              |
-                   v                                           |
-           [Feature Engineer]                                  |
-                   |                                           |
-                   v                                           v
-           [track_embeddings]                         [user_embeddings]
+session boundary = gap > 30 minutes between consecutive plays
+
+For each user session:
+  anchor   = track A (played at time t)
+  positive = track B (played in same session, t' within 30 min of t)
+  negative = track C (random track from a different user's session)
 ```
 
-### 4.4 MSD Feature Availability
+Triplets are only formed for tracks that exist in the Kaggle features dataset (join on `artist_name + track_name`, lowercased + stripped).
 
-The following 9 Echo Nest features (Spotify-compatible) are available in MSD:
+### 4.4 Data Pipeline Architecture
 
-| Feature | Type | MSD Field |
-|---------|------|-----------|
-| `danceability` | float [0,1] | `songs.danceability` |
-| `energy` | float [0,1] | `songs.energy` |
-| `loudness` | float dB | `songs.loudness` |
-| `speechiness` | float [0,1] | (derive from hotttnesss proxy or FMA) |
-| `acousticness` | float [0,1] | `songs.acousticness` |
-| `instrumentalness` | float [0,1] | `songs.instrumentalness` |
-| `liveness` | float [0,1] | `songs.liveness` |
-| `valence` | float [0,1] | `songs.valence` |
-| `tempo` | float BPM | `songs.tempo` |
+```
+[Kaggle Spotify CSV]             [Last.fm 1K TSV]
+        |                               |
+        v                               v
+[kaggle_spotify.py]            [lastfm.py]
+ Load + validate 9 features     Parse events, segment sessions
+        |                               |
+        v                               v
+[features.py]                  [triplets.py]
+ Engineer 3 interaction         Join to Kaggle features
+ features → 12D vector          Build (anchor, pos, neg) triplets
+        |                               |
+        +---------------+---------------+
+                        v
+              [track_features.parquet]   ← 12D feature vectors per track
+              [triplets.parquet]         ← triplet index file
+              [user_history.parquet]     ← per-user track list for GMM
+```
 
-> **Note:** `speechiness` coverage in MSD is partial. Substitute with FMA's librosa-derived feature or drop and replace with a third engineered feature.
+### 4.5 Audio Feature Reference
+
+All 9 base features sourced directly from Kaggle CSV (no derivation needed):
+
+| Feature | Type | Range |
+|---------|------|-------|
+| `danceability` | float | [0, 1] |
+| `energy` | float | [0, 1] |
+| `loudness` | float | [-60, 0] dB → normalized |
+| `speechiness` | float | [0, 1] |
+| `acousticness` | float | [0, 1] |
+| `instrumentalness` | float | [0, 1] |
+| `liveness` | float | [0, 1] |
+| `valence` | float | [0, 1] |
+| `tempo` | float | [40, 220] BPM → normalized |
 
 ---
 
@@ -120,8 +138,8 @@ The following 9 Echo Nest features (Spotify-compatible) are available in MSD:
 │  ┌──────────┐   ┌──────────┐   ┌──────────────────────┐│
 │  │  data/   │   │ models/  │   │     cli/             ││
 │  │          │   │          │   │                      ││
-│  │ msd.py   │   │ mlp.py   │   │ recommend  train     ││
-│  │ mpd.py   │   │ gmm.py   │   │ profile    evaluate  ││
+│  │kaggle.py │   │ mlp.py   │   │ recommend  train     ││
+│  │lastfm.py │   │ gmm.py   │   │ profile    evaluate  ││
 │  │ features │   │ scorer.py│   │                      ││
 │  └──────────┘   └──────────┘   └──────────────────────┘│
 └─────────────────────────────────────────────────────────┘
@@ -144,10 +162,10 @@ Input(12) → Linear(12→64) → BatchNorm → ReLU
 
 **Training:**
 - Loss: `TripletMarginLoss(margin=0.3, p=2)`
-- Triplet mining: semi-hard negatives from MPD playlists
-  - Anchor: song A from playlist P
-  - Positive: song B from same playlist P
-  - Negative: song C from a different playlist P'
+- Triplet mining: semi-hard negatives from Last.fm session pairs
+  - Anchor: song A from user session S
+  - Positive: song B from same session S (within 30-min window)
+  - Negative: song C from a different user's session
 - Optimizer: Adam, lr=1e-3, weight decay=1e-4
 - Scheduler: CosineAnnealingLR
 - Batch size: 512 triplets
@@ -216,10 +234,10 @@ music-discovery-engine/
 │   ├── __init__.py
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── msd.py          # MSD HDF5 loader
-│   │   ├── mpd.py          # MPD JSON parser + triplet generator
-│   │   ├── lastfm.py       # Last.fm / simulated user history
-│   │   └── features.py     # Feature extraction + engineering
+│   │   ├── kaggle_spotify.py   # Kaggle CSV loader + validation
+│   │   ├── lastfm.py           # Last.fm 1K TSV parser + session segmentation
+│   │   ├── triplets.py         # Triplet construction from Last.fm sessions
+│   │   └── features.py         # Feature engineering (12D vector builder)
 │   ├── models/
 │   │   ├── __init__.py
 │   │   ├── mlp.py          # EmbeddingMLP (PyTorch nn.Module)
@@ -245,8 +263,8 @@ music-discovery-engine/
 │   ├── 04_persona_exploration.ipynb
 │   └── 05_experiment_results.ipynb
 ├── scripts/
-│   ├── download_msd_subset.sh
-│   └── prepare_mpd.py
+│   ├── download_kaggle.sh      # kaggle datasets download command
+│   └── download_lastfm.sh      # wget from Zenodo
 ├── tests/
 │   ├── test_features.py
 │   ├── test_mlp.py
@@ -314,14 +332,14 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 **Question:** How different are our recommendations from Spotify's own?
 
 **Method:**
-- Collect Spotify recommendations via API (if accessible) or use a held-out MPD baseline
-- Measure Jaccard similarity: |our_recs ∩ spotify_recs| / |our_recs ∪ spotify_recs|
-- Measure popularity percentile of our recommendations vs. Spotify's
+- Baseline = popularity-ranked recommendations (top-N by play count from Last.fm 1K)
+- Measure Jaccard similarity: |our_recs ∩ popular_recs| / |our_recs ∪ popular_recs|
+- Measure popularity percentile of our recommendations vs. popularity baseline
 - Measure audio feature distribution divergence (KL divergence on each feature)
 
-**Hypothesis:** Our recommendations have lower mean popularity rank and higher feature diversity.
+**Hypothesis:** Our recommendations have lower mean popularity rank and higher feature diversity than the popularity baseline.
 
-**Output:** Overlap table, popularity CDF comparison, feature KL table.
+**Output:** Overlap table, popularity CDF comparison, feature KL divergence table.
 
 ---
 
@@ -342,7 +360,7 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 
 | Phase | Deliverable | Key Files |
 |-------|-------------|-----------|
-| **P1: Data** | MSD loader, MPD parser, feature engineer | `data/msd.py`, `data/mpd.py`, `data/features.py` |
+| **P1: Data** | Kaggle loader, Last.fm parser, session triplets, feature engineer | `data/kaggle_spotify.py`, `data/lastfm.py`, `data/triplets.py`, `data/features.py` |
 | **P2: Embeddings** | MLP + Triplet training loop, saved model | `models/mlp.py`, `models/triplet.py`, `train/train_embeddings.py` |
 | **P3: Personas** | GMM fit + BIC selection per user | `models/gmm.py`, `train/fit_personas.py` |
 | **P4: Scoring** | Scoring function + weight optimizer | `models/scorer.py` |
@@ -361,7 +379,6 @@ dependencies = [
   "pandas>=2.0",
   "numpy>=1.24",
   "pyarrow",          # parquet I/O
-  "h5py",             # MSD HDF5
   "typer",            # CLI
   "pyyaml",           # configs
   "scipy",            # weight optimization
@@ -376,7 +393,7 @@ dependencies = [
 ## 14. Verification Checklist
 
 - [ ] `music-discovery train` completes without error, val triplet loss decreasing
-- [ ] Embedding space: cosine similarity of playlist-mates > random pairs (t-test p<0.05)
+- [ ] Embedding space: cosine similarity of session-mates > random pairs (t-test p<0.05)
 - [ ] GMM BIC selects K>1 for at least 70% of diverse users
 - [ ] Scoring function produces non-uniform rankings (not all scores equal)
 - [ ] Experiment 1 shows at least 1 component is non-redundant (ablation gap > 0.05 NDCG)
