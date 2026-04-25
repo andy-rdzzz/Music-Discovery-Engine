@@ -313,50 +313,94 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 **Question:** Does each scoring component (sonic, emotional, surprise) independently contribute, or does one dominate?
 
 **Method:**
-- Fix a test user set (5–10 diverse users)
-- Sweep weight combinations: grid over w₁ ∈ [0,1], w₂ ∈ [0,1−w₁], w₃ = 1−w₁−w₂, step=0.05
-- Measure: NDCG@10 on held-out playlist songs
-- Ablate: score with each single component alone vs. all three
+- Fix a test user set (5–10 diverse users from Last.fm 1K, held-out final sessions)
+- Ablation: run scoring with each single component alone (w=1.0, others=0)
+- Grid sweep: w₁ ∈ [0,1], w₂ ∈ [0,1−w₁], w₃ = 1−w₁−w₂, step=0.05
+- Measure NDCG@10 at each weight combination
 
-**Output:** Heatmap of NDCG by weight combination. Component contribution table.
+**Graphs for report:**
+1. **Heatmap** — x=w_sonic, y=w_emotional (w_surprise=1−x−y), color=NDCG@10. Shows optimal weight region.
+2. **Grouped bar chart** — NDCG@10 for: sonic only / emotional only / surprise only / learned weights / default weights. Shows each component's independent contribution.
+
+**Expected finding:** Learned weights outperform any single component; no single component dominates.
+
+---
 
 ### Experiment 2 — Persona Count Validation
 
-**Question:** Does BIC-selected K produce better recommendations than fixed K?
+**Question:** Does BIC-selected K produce better-personalized recommendations than fixed K?
 
 **Method:**
-- For 10 diverse users: fit GMM at K ∈ {1, 2, 3, 4, 5, BIC-selected}
-- Compare recommendation NDCG@10 per K
-- Measure: intra-playlist hit rate at fixed N=20 recommendations
+- Classify 10 test users into 3 types by genre entropy: niche (low), diverse (high), mainstream (mid)
+- For each user: fit GMM at K ∈ {1, 2, 3, 4, 5} and BIC-selected K
+- Evaluate NDCG@10 and Hit Rate@20 on held-out listening sessions per K
 
-**Output:** Line chart of NDCG vs K per user type (niche, diverse, mainstream).
+**Graphs for report:**
+1. **Line chart** — x=K, y=NDCG@10, one line per user type (niche / diverse / mainstream). BIC-selected K marked with a star on each line.
+2. **BIC curve** — x=K, y=BIC score for 2–3 representative users. Shows the elbow that BIC selects.
+3. **UMAP scatter** — user's song embeddings in 2D with Gaussian ellipses overlaid for each persona. One plot per representative user.
 
-### Experiment 3 — Spotify Overlap Analysis
+**Expected finding:** BIC-selected K matches or outperforms best fixed K; diverse users benefit most from K>2.
 
-**Question:** How different are our recommendations from Spotify's own?
+---
+
+### Experiment 3 — Popularity Bias Comparison
+
+**Question:** Do our recommendations avoid mainstream content compared to a popularity-ranked baseline?
 
 **Method:**
-- Baseline = popularity-ranked recommendations (top-N by play count from Last.fm 1K)
-- Measure Jaccard similarity: |our_recs ∩ popular_recs| / |our_recs ∪ popular_recs|
-- Measure popularity percentile of our recommendations vs. popularity baseline
-- Measure audio feature distribution divergence (KL divergence on each feature)
+- Baseline: top-N tracks by total Last.fm play count (pure popularity ranking)
+- Our model: recommendations for same users and candidate pool
+- Measure per recommendation set:
+  - Popularity percentile (track's global play count rank, 0=obscure, 1=mainstream)
+  - Jaccard similarity between our recs and baseline recs
+  - KL divergence of each audio feature distribution (our recs vs. baseline)
+  - Intra-list diversity: mean pairwise cosine distance in embedding space
 
-**Hypothesis:** Our recommendations have lower mean popularity rank and higher feature diversity than the popularity baseline.
+**Graphs for report:**
+1. **CDF plot** — x=popularity percentile, y=cumulative fraction of recommended tracks. Two curves: our model vs. popularity baseline. Our model's curve should shift left.
+2. **Feature KL divergence bar chart** — one bar per audio feature showing how much our recs diverge from popularity baseline in each dimension.
+3. **Intra-list diversity box plot** — distribution of pairwise embedding distances for our recs vs. baseline across all test users.
 
-**Output:** Overlap table, popularity CDF comparison, feature KL divergence table.
+**Expected finding:** Our recommendations skew toward lower popularity percentile and show higher intra-list diversity.
 
 ---
 
 ## 11. Evaluation Metrics
 
-| Metric | Used In | Description |
-|--------|---------|-------------|
-| NDCG@10 | Exp 1, 2 | Ranking quality using playlist membership as ground truth |
-| Hit Rate @N | Exp 2 | % of recommended songs that appear in held-out playlists |
-| Jaccard Similarity | Exp 3 | Set overlap with Spotify baseline |
-| Popularity Percentile | Exp 3 | Average chart-position rank of recommendations |
-| Triplet Loss (val) | Training | Embedding model convergence |
-| BIC Score | GMM | Persona count selection quality |
+### 11.1 Embedding Quality (MLP)
+
+| Metric | Graph | What It Proves |
+|--------|-------|---------------|
+| Validation triplet loss vs. epoch | Line chart | Model converged, no overfitting |
+| Mean cosine sim: session-mates vs. random pairs (+ t-test, p<0.05) | Bar chart with error bars | Embedding space encodes musical similarity |
+| Silhouette score on full embedding set | Reported in table | Songs cluster by sonic similarity |
+| t-SNE / UMAP of embeddings colored by genre | 2D scatter plot | Visual proof of structure in embedding space |
+
+### 11.2 Persona Quality (GMM)
+
+| Metric | Graph | What It Proves |
+|--------|-------|---------------|
+| BIC score vs. K per user | Line chart (2–3 users) | BIC selection is principled, not arbitrary |
+| Persona coverage (% songs with posterior p > 0.2) | Bar chart per user | Soft assignment captures multi-genre taste |
+| UMAP with Gaussian ellipses per persona | 2D scatter + ellipses | Personas are spatially coherent |
+
+### 11.3 Recommendation Quality
+
+| Metric | K | Graph | What It Proves |
+|--------|---|-------|---------------|
+| NDCG@K | 5, 10, 20 | Bar chart (component ablation) | Ranking quality vs. held-out sessions |
+| Hit Rate@K | 10, 20 | Bar chart | Absolute accuracy of top-N recs |
+| Mean Reciprocal Rank (MRR) | — | Reported in table | How high the first hit appears |
+| Intra-list diversity | — | Box plot across users | Recs are sonically varied |
+| Novelty (mean popularity percentile) | — | CDF comparison | Engine avoids mainstream bias |
+
+### 11.4 Ground Truth Construction
+
+Since no explicit ratings exist, held-out sessions from Last.fm 1K serve as implicit ground truth:
+- **80/20 split per user**: first 80% of listening history → train GMM + optimize weights; last 20% → evaluation
+- A recommended track is a **hit** if it appears in the user's held-out sessions
+- NDCG uses binary relevance (1 = in held-out, 0 = not)
 
 ---
 
@@ -388,6 +432,7 @@ dependencies = [
   "scipy",            # weight optimization
   "matplotlib",       # experiment plots
   "seaborn",
+  "umap-learn",       # UMAP embeddings visualization
   "tqdm",
 ]
 ```
