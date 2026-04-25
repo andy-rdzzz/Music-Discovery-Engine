@@ -119,11 +119,15 @@ All 9 base features sourced directly from Kaggle CSV (no derivation needed):
 
 ### 5.2 Engineered Interaction Features (3D)
 
-| Feature | Formula | Captures |
-|---------|---------|---------|
-| `energy_dance` | `energy × danceability` | High-intensity dance music dimension |
-| `valence_energy` | `valence × energy` | Emotional arousal (happy-energetic vs sad-mellow) |
-| `acoustic_instrumental` | `acousticness × instrumentalness` | Organic, non-vocal instrumental dimension |
+Grounded in **Russell's Valence-Arousal Circumplex Model** — captures latent musical dimensions not expressed by any single base feature. Designed to be universally applicable regardless of user taste profile (user-specificity is handled downstream by the GMM, not the features).
+
+| Feature | Formula | Captures | Music Psychology Basis |
+|---------|---------|---------|----------------------|
+| `arousal` | `(energy + danceability) / 2` | How activating/energizing the music feels | Russell's arousal axis — orthogonal to valence |
+| `chill_factor` | `acousticness × (1 − energy)` | Mellow, organic, low-intensity music | Calm quadrant in circumplex (low arousal, acoustic) |
+| `vocal_presence` | `(1 − instrumentalness) × (1 − speechiness)` | Sung vocal music vs. spoken word vs. pure instrumental | Distinguishes sung melody from rap/speech and from fully instrumental |
+
+**Why not user-relative features:** Raw features feed a *shared* embedding space trained across all users. User-specificity enters at the GMM layer — persona centroids naturally sit in the region of embedding space where the user actually listens. A non-danceable-music listener's centroids will be in the low-danceability region regardless of whether danceability appears as a feature.
 
 **Final input vector: 12D** = [9 base + 3 engineered], L2-normalized before model input.
 
