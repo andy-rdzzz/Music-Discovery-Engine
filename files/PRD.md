@@ -354,13 +354,15 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 - Measure per recommendation set:
   - Popularity percentile (track's global play count rank, 0=obscure, 1=mainstream)
   - Jaccard similarity between our recs and baseline recs
-  - KL divergence of each audio feature distribution (our recs vs. baseline)
-  - Intra-list diversity: mean pairwise cosine distance in embedding space
+  - KL divergence of each audio feature distribution (our recs vs. baseline) — computed in **12D feature space** (`track_features.parquet`, `FEATURE_VECTOR_COLS`) not in 24D embedding space. Embedding dims are latent and uninterpretable per-dimension; feature space gives human-readable divergence per audio attribute.
+  - Intra-list diversity: mean pairwise cosine distance in **24D embedding space** (captures overall sonic distance between recommended tracks)
+
+**Implementation note:** KL divergence and intra-list diversity intentionally use different spaces. KL uses the 12D interpretable feature space for report readability. Diversity uses the 24D embedding space because that is the model's learned similarity metric.
 
 **Graphs for report:**
 1. **CDF plot** — x=popularity percentile, y=cumulative fraction of recommended tracks. Two curves: our model vs. popularity baseline. Our model's curve should shift left.
-2. **Feature KL divergence bar chart** — one bar per audio feature showing how much our recs diverge from popularity baseline in each dimension.
-3. **Intra-list diversity box plot** — distribution of pairwise embedding distances for our recs vs. baseline across all test users.
+2. **Feature KL divergence bar chart** — one bar per audio feature (12D feature space) showing how much our recs diverge from popularity baseline in each dimension.
+3. **Intra-list diversity box plot** — distribution of pairwise cosine distances in 24D embedding space for our recs vs. baseline across all test users.
 
 **Expected finding:** Our recommendations skew toward lower popularity percentile and show higher intra-list diversity.
 

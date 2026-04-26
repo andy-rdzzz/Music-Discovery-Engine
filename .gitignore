@@ -2,3 +2,26 @@
 .agents/skills/grill-me
 skills-lock.json
 copilot
+
+# data & models
+data/raw/
+data/processed/
+models/
+*.parquet
+*.h5
+*.pt
+*.pth
+
+# python
+__pycache__/
+*.pyc
+*.pyo
+.env
+.venv/
+venv/
+dist/
+build/
+*.egg-info/
+.pytest_cache/
+.DS_Store
+notebooks/.ipynb_checkpoints/

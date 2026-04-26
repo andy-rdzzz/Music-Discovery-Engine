@@ -1,0 +1,36 @@
+data:
+  kaggle_csv: data/raw/spotify_tracks.csv
+  lastfm_tsv: data/raw/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv
+  processed_dir: data/processed
+  session_gap_minutes: 30
+  min_session_length: 2        # discard sessions with < 2 tracks
+  train_split: 0.8             # temporal split per user
+
+features:
+  loudness_min: -60.0
+  loudness_max: 0.0
+  tempo_min: 40.0
+  tempo_max: 220.0
+
+model:
+  input_dim: 12
+  hidden_dims: [64, 48]
+  embedding_dim: 16
+  dropout: 0.35
+
+training:
+  batch_size: 256
+  epochs: 50
+  lr: 0.001
+  weight_decay: 2e-3
+  margin: 0.4
+  patience: 10
+  uniformity_weight: 0.05
+
+gmm:
+  k_min: 2
+  k_max: 10
+  covariance_type: full
+
+scoring:
+  default_weights: [0.4, 0.4, 0.2]   # [sonic, emotional, surprise]
