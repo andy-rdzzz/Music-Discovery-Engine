@@ -7,7 +7,7 @@ from typing import Any
 
 import torch
 import torch.nn as nn
-from torch.utils.data import DataLoader, random_split
+from torch.utils.data import DataLoader, Subset, random_split
 
 from music_discovery.models.mlp import EmbeddingMLP
 from music_discovery.models.triplet import TripletDataset, mine_semi_hard_negatives
@@ -35,7 +35,7 @@ def train_embeddings(
     model_cfg = cfg.get("model", {})
     train_cfg = cfg.get("training", {})
 
-    input_dim = model_cfg.get("input_dim", 12)
+    input_dim = model_cfg.get("input_dim", 10)
     hidden_dims = model_cfg.get("hidden_dims", [64, 48])
     embedding_dim = model_cfg.get("embedding_dim", 24)
     dropout = float(model_cfg.get("dropout", 0.2))
@@ -62,9 +62,19 @@ def train_embeddings(
 
     dataset = TripletDataset(triplets_df, feature_matrix)
 
-    val_size = max(1, int(0.2 * len(dataset)))
-    train_size = len(dataset) - val_size
-    train_ds, val_ds = random_split(dataset, [train_size, val_size])
+    # Fix 3b: user-level split — hold out 15% of users entirely so val has zero user overlap with train
+    rng_split = torch.Generator().manual_seed(42)
+    all_users = triplets_df["user_id"].unique()
+    n_val_users = max(1, int(0.15 * len(all_users)))
+    val_user_idx = torch.randperm(len(all_users), generator=rng_split)[:n_val_users]
+    val_users = set(all_users[val_user_idx.numpy()])
+    val_mask = triplets_df["user_id"].isin(val_users).to_numpy()
+    val_indices = list(val_mask.nonzero()[0])
+    train_indices = list((~val_mask).nonzero()[0])
+    train_ds = Subset(dataset, train_indices)
+    val_ds = Subset(dataset, val_indices)
+    train_size = len(train_ds)
+    val_size = len(val_ds)
 
     train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=0, pin_memory=False)
     val_loader = DataLoader(val_ds, batch_size=batch_size, shuffle=False, num_workers=0)

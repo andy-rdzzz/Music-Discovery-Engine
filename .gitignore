@@ -2,6 +2,7 @@
 .agents/skills/grill-me
 skills-lock.json
 copilot
+notes.txt
 
 # data & models
 data/raw/
