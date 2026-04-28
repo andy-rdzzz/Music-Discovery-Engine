@@ -1,11 +1,23 @@
 from __future__ import annotations
 
+import re
 import pandas as pd
 from pathlib import Path
 from typing import Iterator
 
 TSV_COLS = ["user_id", "timestamp", "artist_id", "artist_name", "track_id", "track_name"]
 SESSION_GAP_MINUTES = 30
+
+
+def _normalize_name(s: object) -> str:
+    """Expanded normalization: lowercase, strip parentheticals and featured-artist credits."""
+    if not isinstance(s, str):
+        return ""
+    s = s.lower().strip()
+    s = re.sub(r"\s*\(.*?\)", "", s)
+    s = re.sub(r"\s+(?:feat|ft)\.?\s+.*", "", s)
+    s = re.sub(r"\s+", " ", s).strip()
+    return s
 
 
 def load_lastfm_events(tsv_path: str | Path, nrows: int | None = None) -> pd.DataFrame:
@@ -25,8 +37,10 @@ def load_lastfm_events(tsv_path: str | Path, nrows: int | None = None) -> pd.Dat
     df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True, errors="coerce")
     df = df.dropna(subset=["user_id", "timestamp", "artist_name", "track_name"])
 
-    df["artist_norm"] = df["artist_name"].str.lower().str.strip()
-    df["track_norm"] = df["track_name"].str.lower().str.strip()
+    # Fix 1: expanded normalization to increase Last.fm ↔ Spotify join coverage
+    df["artist_norm"] = df["artist_name"].apply(_normalize_name)
+    df["track_norm"] = df["track_name"].apply(_normalize_name)
+    df = df[(df["artist_norm"] != "") & (df["track_norm"] != "")]
 
     df = df.sort_values(["user_id", "timestamp"]).reset_index(drop=True)
     print(f"[lastfm] Loaded {len(df):,} events for {df['user_id'].nunique():,} users")

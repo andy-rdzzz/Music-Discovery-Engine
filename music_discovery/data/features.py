@@ -46,7 +46,7 @@ def engineer_features(
 FEATURE_VECTOR_COLS = [
     "danceability", "energy", "loudness_norm", "acousticness",
     "instrumentalness", "liveness", "valence", "tempo_norm", "speechiness",
-    "arousal", "chill_factor", "vocal_presence",
+    "arousal",
 ]
 
 

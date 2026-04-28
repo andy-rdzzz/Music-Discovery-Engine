@@ -13,7 +13,7 @@ features:
   tempo_max: 220.0
 
 model:
-  input_dim: 12
+  input_dim: 10
   hidden_dims: [64, 48]
   embedding_dim: 16
   dropout: 0.35
@@ -33,4 +33,12 @@ gmm:
   covariance_type: full
 
 scoring:
-  default_weights: [0.4, 0.4, 0.2]   # [sonic, emotional, surprise]
+  default_weights: [0.45, 0.30, 0.15, 0.10]   # [persona_fit, novelty, emotional_fit, familiarity]
+
+recommend:
+  persona_temp: 0.7          # tau: <1 flattens allocation, =1 raw proportional
+  min_slots_per_persona: 1
+  max_slots_fraction: 0.6
+  exploration_fraction: 0.15
+  mmr_lambda: 0.7
+  max_per_artist: 2

@@ -28,7 +28,8 @@ def load_user_embeddings(
 
     user_embeddings: dict[str, np.ndarray] = {}
     for user_id, group in history_df.groupby("user_id"):
-        indices = group["track_idx"].to_numpy()
+        # Fix 5: deduplicate to unique tracks so GMM fits taste breadth, not replay frequency
+        indices = group["track_idx"].drop_duplicates().to_numpy()
         valid = indices[indices < len(emb_matrix)]
         if len(valid) > 0:
             user_embeddings[str(user_id)] = emb_matrix[valid]

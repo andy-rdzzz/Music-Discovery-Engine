@@ -151,10 +151,11 @@ def recommend(
 ):
     """Generate top-N recommendations for a user."""
     from music_discovery.train.fit_personas import load_persona
-    from music_discovery.models.scorer import score_candidates, optimize_weights, DEFAULT_WEIGHTS
+    from music_discovery.models.scorer import optimize_weights, recommend_diverse, DEFAULT_WEIGHTS
 
     cfg = _load_config(config)
     scoring_cfg = cfg.get("scoring", {})
+    rec_cfg = cfg.get("recommend", {})
     default_w = np.array(scoring_cfg.get("default_weights", DEFAULT_WEIGHTS.tolist()))
 
     typer.echo(f"[recommend] Loading persona for {user_id}...")
@@ -172,28 +173,41 @@ def recommend(
     user_history_emb = candidate_emb[valid_idx]
     user_history_artists = candidate_artists[valid_idx]
 
-    # Try to optimise weights (fallback to defaults)
-    held_out_raw = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "eval")]["track_idx"].to_numpy()
+    # Try to optimise weights on discovery eval rows (fallback to defaults)
+    eval_rows = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "eval")]
+    if "is_discovery" in eval_rows.columns:
+        eval_rows = eval_rows[eval_rows["is_discovery"]]
+    held_out_raw = eval_rows["track_idx"].to_numpy()
     held_out = held_out_raw[(held_out_raw >= 0) & (held_out_raw < len(candidate_emb))]
     weights = optimize_weights(
         candidate_emb, candidate_artists, persona,
         user_history_emb, user_history_artists, held_out,
     )
 
-    typer.echo(f"[recommend] Scoring {len(candidate_emb):,} candidates (weights={np.round(weights, 3)})...")
-    scores = score_candidates(candidate_emb, candidate_artists, persona, user_history_emb, user_history_artists, weights)
-
-    # Exclude tracks already in user history
-    scores[valid_idx] = -np.inf
-    top_n = np.argsort(-scores)[:n]
+    typer.echo(f"[recommend] Running diverse pipeline (weights={np.round(weights, 3)})...")
+    top_n_indices = recommend_diverse(
+        persona=persona,
+        candidate_emb=candidate_emb,
+        candidate_artists=candidate_artists,
+        history_emb=user_history_emb,
+        history_artists=user_history_artists,
+        history_indices=valid_idx,
+        n_recs=n,
+        weights=weights,
+        tau=rec_cfg.get("persona_temp", 0.7),
+        min_slots=rec_cfg.get("min_slots_per_persona", 1),
+        max_fraction=rec_cfg.get("max_slots_fraction", 0.6),
+        exploration_fraction=rec_cfg.get("exploration_fraction", 0.15),
+        mmr_lambda=rec_cfg.get("mmr_lambda", 0.7),
+        max_per_artist=rec_cfg.get("max_per_artist", 2),
+    )
 
     results = []
-    for rank, idx in enumerate(top_n, 1):
+    for rank, idx in enumerate(top_n_indices, 1):
         results.append({
             "rank": rank,
             "artist": emb_df["artist_norm"].iloc[idx],
             "track": emb_df["track_norm"].iloc[idx],
-            "score": float(scores[idx]),
         })
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
@@ -202,7 +216,7 @@ def recommend(
 
     typer.echo(f"[recommend] Top {n} recommendations saved to {output}")
     for r in results[:5]:
-        typer.echo(f"  #{r['rank']:2d}  {r['artist']} — {r['track']}  ({r['score']:.4f})")
+        typer.echo(f"  #{r['rank']:2d}  {r['artist']} — {r['track']}")
 
 
 # ---------------------------------------------------------------------------
@@ -250,6 +264,20 @@ def evaluate_popularity_bias(
     """Experiment 3: popularity bias comparison vs baseline."""
     from music_discovery.evaluate.spotify_overlap import run as run_exp3
     run_exp3(processed_dir, embeddings_path, personas_dir, output_dir, n_users)
+
+
+@evaluate_app.command("recommendation-quality")
+def evaluate_recommendation_quality(
+    processed_dir: str = typer.Option("data/processed"),
+    embeddings_path: str = typer.Option("models/embeddings/track_embeddings.parquet"),
+    personas_dir: str = typer.Option("models/personas"),
+    output_dir: str = typer.Option("results/rec_quality"),
+    n_users: int = typer.Option(20),
+    k: int = typer.Option(10, help="Cut-off for @K metrics"),
+):
+    """Recommendation quality: Replay@K, Discovery@K, NDCG@K, artist repetition, persona coverage."""
+    from music_discovery.evaluate.recommendation_quality import run as run_rq
+    run_rq(processed_dir, embeddings_path, personas_dir, output_dir, n_users, k)
 
 
 if __name__ == "__main__":

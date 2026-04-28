@@ -145,7 +145,7 @@ def test_score_candidates_custom_weights():
     history = make_norm_emb(10, seed=1)
     c_artists = make_artists(10)
     h_artists = make_artists(10, seed=1)
-    w = np.array([1.0, 0.0, 0.0])
+    w = np.array([1.0, 0.0, 0.0, 0.0])
     scores = score_candidates(candidates, c_artists, persona, history, h_artists, weights=w)
     assert scores.shape == (10,)
 

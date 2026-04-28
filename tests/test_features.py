@@ -41,13 +41,13 @@ def test_engineer_features_adds_expected_columns():
 
 
 def test_feature_vector_cols_length():
-    assert len(FEATURE_VECTOR_COLS) == 12
+    assert len(FEATURE_VECTOR_COLS) == 10
 
 
 def test_build_feature_matrix_shape():
     df = engineer_features(make_tracks())
     mat = build_feature_matrix(df)
-    assert mat.shape == (1, 12)
+    assert mat.shape == (1, 10)
     assert mat.dtype == np.float32
 
 
@@ -168,4 +168,4 @@ def test_engineer_features_preserves_row_count():
 def test_build_feature_matrix_multi_row_shape():
     df = pd.concat([engineer_features(make_tracks(energy=i / 10)) for i in range(5)], ignore_index=True)
     mat = build_feature_matrix(df)
-    assert mat.shape == (5, 12)
+    assert mat.shape == (5, 10)

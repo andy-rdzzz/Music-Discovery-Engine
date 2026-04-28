@@ -3,7 +3,7 @@
 **Type:** Academic / Research  
 **Stack:** Python · PyTorch · scikit-learn  
 **Deliverable:** Python package (`music_discovery`) + CLI  
-**Date:** 2026-04-25
+**Date:** 2026-04-27 (updated: data remediation pass)
 
 ---
 
@@ -63,11 +63,33 @@ session boundary = gap > 30 minutes between consecutive plays
 
 For each user session:
   anchor   = track A (played at time t)
-  positive = track B (played in same session, t' within 30 min of t)
-  negative = track C (random track from a different user's session)
+  positive = track B (played in same session, t' ≠ t)
+  negative = track C sampled from in-distribution pool (see §4.3.1)
 ```
 
-Triplets are only formed for tracks that exist in the Kaggle features dataset (join on `artist_name + track_name`, lowercased + stripped).
+Triplets are only formed for tracks that exist in the Kaggle features dataset (join on `artist_norm + track_norm` after expanded normalization — see §4.3.2).
+
+#### 4.3.1 In-Distribution Negative Sampling
+
+Negatives are sampled from the **in-distribution pool** — the set of all tracks that appear in at least one user's listening history — excluding the current user's own training tracks. This ensures the model learns to distinguish genuine preferences from plausible alternatives, not heard behavior from random catalog entries.
+
+- If a user's pool drops below 10 candidates, that user is skipped with a warning (edge case for very active listeners who have heard most of the catalog).
+- Trivial triplets where `anchor_idx == pos_idx` are filtered out post-construction.
+- Duplicate `(user, anchor, pos)` triplets are deduplicated.
+
+#### 4.3.2 Name Normalization
+
+Both Last.fm and Kaggle names go through expanded normalization before the join:
+1. Lowercase + strip whitespace
+2. Strip parenthetical suffixes: `(Remastered)`, `(feat. X)`, `(Radio Edit)`, etc.
+3. Strip `feat.` / `ft.` artist credits from track names
+4. Collapse repeated whitespace
+
+This replaces the original `lower().strip()` only approach.
+
+#### 4.3.3 Eval Discovery Tagging
+
+`user_history.parquet` gains an `is_discovery` boolean column on eval rows. `is_discovery=True` when the eval track was **not** seen in that user's train history. Evaluation scripts should filter to `is_discovery=True` rows to measure true discovery rather than repeat-play recovery.
 
 ### 4.4 Data Pipeline Architecture
 
@@ -77,18 +99,26 @@ Triplets are only formed for tracks that exist in the Kaggle features dataset (j
         v                               v
 [kaggle_spotify.py]            [lastfm.py]
  Load + validate 9 features     Parse events, segment sessions
+ Expanded normalization          Expanded normalization
+ Mean-aggregate duplicate keys
         |                               |
         v                               v
 [features.py]                  [triplets.py]
- Engineer 3 interaction         Join to Kaggle features
- features → 12D vector          Build (anchor, pos, neg) triplets
+ Engineer 1 interaction         Join to Kaggle features
+ feature → 10D vector           Build in-distribution triplets
+                                 Filter trivials + dedup
+                                 Tag is_discovery on eval rows
         |                               |
         +---------------+---------------+
                         v
-              [track_features.parquet]   ← 12D feature vectors per track
-              [triplets.parquet]         ← triplet index file
-              [user_history.parquet]     ← per-user track list for GMM
+              [track_features.parquet]   ← 10D feature vectors per track
+              [triplets.parquet]         ← triplet index file (clean)
+              [user_history.parquet]     ← per-user track list + is_discovery
 ```
+
+#### 4.5.1 Catalog Deduplication
+
+When multiple Kaggle rows share the same `(artist_norm, track_norm)` key, audio features are **mean-aggregated** across the group. Display strings (`artists`, `track_name`) are taken from the first occurrence. This replaces the original `keep='first'` strategy that arbitrarily chose one conflicting feature vector.
 
 ### 4.5 Audio Feature Reference
 
@@ -117,19 +147,19 @@ All 9 base features sourced directly from Kaggle CSV (no derivation needed):
 - `loudness_norm`: min-max scale from [-60, 0] dB → [0, 1]
 - `tempo_norm`: min-max scale from [40, 220] BPM → [0, 1]
 
-### 5.2 Engineered Interaction Features (3D)
+### 5.2 Engineered Interaction Features (1D)
 
-Grounded in **Russell's Valence-Arousal Circumplex Model** — captures latent musical dimensions not expressed by any single base feature. Designed to be universally applicable regardless of user taste profile (user-specificity is handled downstream by the GMM, not the features).
+One circumplex feature is retained, grounded in **Russell's Valence-Arousal Circumplex Model**:
 
-| Feature | Formula | Captures | Music Psychology Basis |
-|---------|---------|---------|----------------------|
-| `arousal` | `(energy + danceability) / 2` | How activating/energizing the music feels | Russell's arousal axis — orthogonal to valence |
-| `chill_factor` | `acousticness × (1 − energy)` | Mellow, organic, low-intensity music | Calm quadrant in circumplex (low arousal, acoustic) |
-| `vocal_presence` | `(1 − instrumentalness) × (1 − speechiness)` | Sung vocal music vs. spoken word vs. pure instrumental | Distinguishes sung melody from rap/speech and from fully instrumental |
+| Feature | Formula | Captures |
+|---------|---------|---------|
+| `arousal` | `(energy + danceability) / 2` | How activating/energizing the music feels |
 
-**Why not user-relative features:** Raw features feed a *shared* embedding space trained across all users. User-specificity enters at the GMM layer — persona centroids naturally sit in the region of embedding space where the user actually listens. A non-danceable-music listener's centroids will be in the low-danceability region regardless of whether danceability appears as a feature.
+Two previously included features (`chill_factor`, `vocal_presence`) were dropped because they are deterministic recombinations of base features already present in the vector, with pairwise correlations ≥ 0.85. Retaining them overweighted the dimensions they recombine without adding independent signal.
 
-**Final input vector: 12D** = [9 base + 3 engineered], L2-normalized before model input.
+**Why not user-relative features:** Raw features feed a *shared* embedding space trained across all users. User-specificity enters at the GMM layer — persona centroids naturally sit in the region of embedding space where the user actually listens.
+
+**Final input vector: 10D** = [9 base + 1 engineered], L2-normalized before model input.
 
 ---
 
@@ -155,25 +185,26 @@ Grounded in **Russell's Valence-Arousal Circumplex Model** — captures latent m
 
 ### 7.1 Metric Learning MLP
 
-**Goal:** Map 12D audio features → 24D L2-normalized embedding space where playlist co-occurrence ≈ proximity.
+**Goal:** Map 10D audio features → 24D L2-normalized embedding space where playlist co-occurrence ≈ proximity.
 
 **Architecture:**
 ```
-Input(12) → Linear(12→64) → BatchNorm → ReLU
+Input(10) → Linear(10→64) → BatchNorm → ReLU
           → Linear(64→48) → BatchNorm → ReLU  → Dropout(0.2)
           → Linear(48→24) → L2Normalize
 ```
 
 **Training:**
 - Loss: `TripletMarginLoss(margin=0.3, p=2)`
-- Triplet mining: semi-hard negatives from Last.fm session pairs
+- Triplet mining: semi-hard negatives (online, within-batch)
   - Anchor: song A from user session S
   - Positive: song B from same session S (within 30-min window)
-  - Negative: song C from a different user's session
-- Optimizer: Adam, lr=1e-3, weight decay=1e-4
+  - Negative: song C from in-distribution pool (tracks seen in any user history), excluding the current user's train tracks
+- Train/val split: **user-level** — 15% of users held out entirely for validation (zero user overlap between train and val loss)
+- Optimizer: Adam, lr=1e-3, weight decay=2e-3
 - Scheduler: CosineAnnealingLR
 - Batch size: 512 triplets
-- Epochs: 50 (early stopping on validation triplet loss)
+- Epochs: 50 (early stopping patience=10 on validation triplet loss)
 
 **Hyperparameters to tune:**
 - Margin: {0.2, 0.3, 0.5}
@@ -185,9 +216,9 @@ Input(12) → Linear(12→64) → BatchNorm → ReLU
 **Goal:** Represent each user's taste as K soft-assignment Gaussian clusters (personas) in embedding space.
 
 **Process:**
-1. Collect user's song embeddings (24D) from their listening history
+1. Collect user's song embeddings (24D) from their listening history — **deduplicated to unique tracks** to avoid replay loops inflating head behavior
 2. Fit GMM with K components, full covariance
-3. Select K via **BIC** — range K ∈ [1, 8], pick argmin(BIC)
+3. Select K via **BIC** — range K ∈ [2, 10], pick argmin(BIC)
 4. Each persona k = (mean μ_k, covariance Σ_k, weight π_k)
 
 **Implementation:** `sklearn.mixture.GaussianMixture`
@@ -354,7 +385,7 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 - Measure per recommendation set:
   - Popularity percentile (track's global play count rank, 0=obscure, 1=mainstream)
   - Jaccard similarity between our recs and baseline recs
-  - KL divergence of each audio feature distribution (our recs vs. baseline) — computed in **12D feature space** (`track_features.parquet`, `FEATURE_VECTOR_COLS`) not in 24D embedding space. Embedding dims are latent and uninterpretable per-dimension; feature space gives human-readable divergence per audio attribute.
+  - KL divergence of each audio feature distribution (our recs vs. baseline) — computed in **10D feature space** (`track_features.parquet`, `FEATURE_VECTOR_COLS`) not in 24D embedding space. Embedding dims are latent and uninterpretable per-dimension; feature space gives human-readable divergence per audio attribute.
   - Intra-list diversity: mean pairwise cosine distance in **24D embedding space** (captures overall sonic distance between recommended tracks)
 
 **Implementation note:** KL divergence and intra-list diversity intentionally use different spaces. KL uses the 12D interpretable feature space for report readability. Diversity uses the 24D embedding space because that is the model's learned similarity metric.
@@ -400,9 +431,10 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 ### 11.4 Ground Truth Construction
 
 Since no explicit ratings exist, held-out sessions from Last.fm 1K serve as implicit ground truth:
-- **80/20 split per user**: first 80% of listening history → train GMM + optimize weights; last 20% → evaluation
-- A recommended track is a **hit** if it appears in the user's held-out sessions
-- NDCG uses binary relevance (1 = in held-out, 0 = not)
+- **80/20 temporal split per user**: first 80% of sessions → train GMM + optimize weights; last 20% → evaluation
+- Evaluation is filtered to **`is_discovery=True`** rows — eval tracks the user had not already heard in train. This measures true discovery, not repeat-play recovery.
+- A recommended track is a **hit** if it appears in the user's discovery eval set
+- NDCG uses binary relevance (1 = in discovery eval, 0 = not)
 
 ---
 
@@ -443,11 +475,27 @@ dependencies = [
 
 ## 14. Verification Checklist
 
+**Data pipeline:**
+- [ ] Match rate after expanded normalization > 20% of Last.fm events (logged by `process`)
+- [ ] Neg-from-seen-pool rate > 80% (logged by `process`)
+- [ ] Eval discovery rate > 80% (logged by `process`)
+- [ ] Zero trivial triplets: `(anchor_idx == pos_idx).sum() == 0`
+
+**Training:**
 - [ ] `music-discovery train` completes without error, val triplet loss decreasing
+- [ ] Val split uses held-out users (zero user overlap with train)
 - [ ] Embedding space: cosine similarity of session-mates > random pairs (t-test p<0.05)
-- [ ] GMM BIC selects K>1 for at least 70% of diverse users
+
+**Personas:**
+- [ ] GMM inputs are deduplicated (unique tracks only per user)
+- [ ] BIC selects K>1 for at least 70% of diverse users
+
+**Evaluation:**
+- [ ] NDCG computed only on `is_discovery=True` eval rows
 - [ ] Scoring function produces non-uniform rankings (not all scores equal)
 - [ ] Experiment 1 shows at least 1 component is non-redundant (ablation gap > 0.05 NDCG)
-- [ ] Experiment 3 Jaccard overlap < 0.3 (our recs differ meaningfully from Spotify baseline)
+- [ ] Experiment 3 Jaccard overlap < 0.3 (our recs differ meaningfully from popularity baseline)
+
+**General:**
 - [ ] All tests pass: `pytest tests/`
-- [ ] CLI commands documented in README with examples
+- [ ] CLI commands work end-to-end: `music-discovery process → train → profile → evaluate`
