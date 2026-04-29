@@ -1,0 +1,46 @@
+strip_patterns:
+  # Common version/edit noise that often survives base normalization.
+  - "\\bremaster(?:ed)?(?:\\s+\\d{2,4})?\\b"
+  - "\\bradio\\s+edit\\b"
+  - "\\balbum\\s+version\\b"
+  - "\\bsingle\\s+version\\b"
+  - "\\bmono\\b"
+  - "\\bstereo\\b"
+  - "\\blive\\b"
+  - "\\bacoustic\\b"
+  - "\\binstrumental\\b"
+  - "\\bkaraoke\\b"
+  - "\\bdemo\\b"
+  - "\\bedit\\b"
+  - "\\breprise\\b"
+  - "\\bdeluxe\\b"
+  - "\\bexpanded\\b"
+  - "\\bbonus\\s+track\\b"
+  - "\\bfrom\\s+the\\s+.*soundtrack\\b"
+  - "\\boriginal\\s+motion\\s+picture\\s+soundtrack\\b"
+  - "\\bost\\b"
+  # Trailing version/mix fragments left after other strips
+  - "\\bversion\\b$"
+  - "\\bmix\\b$"
+  # Orphaned year and dash fragments left after version-word removal
+  - "\\s*-\\s*\\d{4}\\s*$"
+  - "\\s*-\\s*$"
+
+artist_aliases:
+  # Conservative examples only; add project-specific aliases over time.
+  - ["ac/dc", "acdc"]
+  - ["earth, wind & fire", "earth wind and fire"]
+  - ["guns n' roses", "guns n roses"]
+  - ["jay-z", "jay z"]
+  - ["whitney houston duet", "whitney houston"]
+  # Extended aliases — bidirectional where both forms appear in Last.fm
+  - ["puff daddy", "p diddy"]
+  - ["p. diddy", "p diddy"]
+  - ["notorious b.i.g.", "notorious big"]
+  - ["snoop doggy dogg", "snoop dogg"]
+  - ["the weeknd", "weeknd"]
+  - ["weeknd", "the weeknd"]
+  - ["nwa", "n.w.a"]
+  - ["n.w.a.", "nwa"]
+  - ["run dmc", "run d.m.c."]
+  - ["run d.m.c.", "run dmc"]

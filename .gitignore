@@ -12,6 +12,7 @@ models/
 *.h5
 *.pt
 *.pth
+results
 
 # python
 __pycache__/

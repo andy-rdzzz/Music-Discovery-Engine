@@ -10,7 +10,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 from music_discovery.train.fit_personas import load_persona
-from music_discovery.models.scorer import sonic_fit, emotional_fit, surprise_score, DEFAULT_WEIGHTS
+from music_discovery.models.scorer import sonic_fit, emotional_fit, novelty_score, familiarity_score, DEFAULT_WEIGHTS
 
 
 def _ndcg_at_k(scores: np.ndarray, relevant_mask: np.ndarray, k: int = 10) -> float:
@@ -32,6 +32,10 @@ def _load_user_data(
 ):
     train = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "train")]
     eval_ = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "eval")]
+
+    # Filter eval to discovery-only rows when the column is available
+    if "is_discovery" in eval_.columns:
+        eval_ = eval_[eval_["is_discovery"]]
 
     train_idx = train["track_idx"].to_numpy()
     eval_idx = eval_["track_idx"].to_numpy()
@@ -82,13 +86,13 @@ def run(
         if history_emb.shape[0] == 0 or held_out_mask.sum() == 0:
             continue
 
-        s1 = sonic_fit(candidate_emb, persona)
-        s1 = (s1 + 1.0) / 2.0
-        s2 = emotional_fit(candidate_emb, persona)
-        s3 = surprise_score(candidate_emb, candidate_artists, history_emb, history_artists)
-        components = np.stack([s1, s2, s3], axis=1)
+        s1 = (sonic_fit(candidate_emb, persona) + 1.0) / 2.0
+        s2 = novelty_score(candidate_emb, candidate_artists, history_emb, history_artists)
+        s3 = emotional_fit(candidate_emb, persona)
+        s4 = familiarity_score(candidate_emb, persona)
+        components = np.stack([s1, s2, s3, s4], axis=1)  # (N, 4)
 
-        # Grid sweep
+        # Grid sweep over (w_persona_fit, w_novelty); w_emotional fixed at 0.15, w_familiarity at remainder
         step = weight_step
         for w1 in np.arange(0, 1 + step, step):
             for w2 in np.arange(0, 1 - w1 + step, step):
@@ -96,14 +100,19 @@ def run(
                 if w3 < -1e-6:
                     continue
                 w3 = max(0.0, w3)
-                w = np.array([w1, w2, w3])
+                w = np.array([w1, w2, w3, 0.0])
                 scores = components @ w
                 ndcg = _ndcg_at_k(scores, held_out_mask, k)
                 all_results.append({"user_id": user_id, "w1": round(w1, 2), "w2": round(w2, 2), "w3": round(w3, 2), "ndcg": ndcg})
 
-        # Ablation: single component only
-        for label, w in [("sonic_only", [1,0,0]), ("emotional_only", [0,1,0]), ("surprise_only", [0,0,1]),
-                          ("default_weights", DEFAULT_WEIGHTS.tolist())]:
+        # Ablation: single component only + default 4-component weights
+        for label, w in [
+            ("persona_fit_only",  [1, 0, 0, 0]),
+            ("novelty_only",      [0, 1, 0, 0]),
+            ("emotional_only",    [0, 0, 1, 0]),
+            ("familiarity_only",  [0, 0, 0, 1]),
+            ("default_weights",   DEFAULT_WEIGHTS.tolist()),
+        ]:
             scores = components @ np.array(w)
             ndcg = _ndcg_at_k(scores, held_out_mask, k)
             all_results.append({"user_id": user_id, "w1": w[0], "w2": w[1], "w3": w[2], "ndcg": ndcg, "label": label})
@@ -127,13 +136,13 @@ def run(
     plt.close(fig)
 
     # ── Graph 2: Ablation bar chart ──
-    ablation_labels = ["sonic_only", "emotional_only", "surprise_only", "default_weights"]
+    ablation_labels = ["persona_fit_only", "novelty_only", "emotional_only", "familiarity_only", "default_weights"]
     if "label" in results_df.columns:
         ablation = results_df[results_df["label"].isin(ablation_labels)]
         ablation_mean = ablation.groupby("label")["ndcg"].mean().reindex(ablation_labels)
 
-        fig, ax = plt.subplots(figsize=(7, 4))
-        ablation_mean.plot(kind="bar", ax=ax, color=["#4C72B0","#DD8452","#55A868","#C44E52"], edgecolor="white")
+        fig, ax = plt.subplots(figsize=(8, 4))
+        ablation_mean.plot(kind="bar", ax=ax, color=["#4C72B0","#DD8452","#55A868","#C44E52","#8172B2"], edgecolor="white")
         ax.set_title("Component Ablation — Mean NDCG@10")
         ax.set_ylabel("NDCG@10")
         ax.set_xticklabels(ablation_labels, rotation=30, ha="right")

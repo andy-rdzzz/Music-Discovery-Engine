@@ -23,8 +23,11 @@ def _ndcg_at_k(top_n: np.ndarray, relevant_set: set, k: int) -> float:
     if rel.sum() == 0:
         return 0.0
     dcg = (rel / np.log2(np.arange(2, len(rel) + 2))).sum()
-    ideal = np.sort(rel)[::-1]
-    idcg = (ideal / np.log2(np.arange(2, len(ideal) + 2))).sum()
+    # IDCG: ideal list has min(|relevant_set|, k) hits at the top positions
+    n_ideal = min(len(relevant_set), k)
+    ideal = np.zeros(k)
+    ideal[:n_ideal] = 1.0
+    idcg = (ideal / np.log2(np.arange(2, k + 2))).sum()
     return float(dcg / idcg) if idcg > 0 else 0.0
 
 

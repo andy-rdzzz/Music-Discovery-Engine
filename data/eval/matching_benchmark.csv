@@ -1,0 +1,201 @@
+benchmark_id,difficulty,perturbation,query_artist,query_track,query_artist_norm,query_track_norm,target_artist_norm,target_track_norm,target_track_idx,canonical_artist,canonical_track,n_matched_events,same_artist_candidates,same_track_candidates
+0,easy,artist_punctuation,Rancid,Rejected,rancid,rejected,rancid,rejected,71508,Rancid,Rejected,121,2,1
+1,hard,track_typo,Klaxons,Goden Skans,klaxons,goden skans,klaxons,golden skans,25994,Klaxons,Golden Skans,2014,1,1
+2,easy,track_punctuation,El Michels Affair,CREAM,el michels affair,cream,el michels affair,c.r.e.a.m.,1123,El Michels Affair,C.R.E.A.M.,5,10,2
+3,hard,track_typo,Los Prisioneros,Usted Y Su Ambciión,los prisioneros,usted y su ambciión,los prisioneros,usted y su ambición,38113,Los Prisioneros,Usted Y Su Ambición,6,32,1
+4,medium,artist_and_symbol,Louise Attaque,See You Later Alligator,louise attaque,see you later alligator,louise attaque,see you later alligator,29611,Louise Attaque,See You Later Alligator,19,3,2
+5,medium,artist_and_symbol,Linkin Park,In Pieces,linkin park,in pieces,linkin park,in pieces,35110,Linkin Park,In Pieces,242,83,1
+6,easy,raw,Avalanch,Levántate Y Anda,avalanch,levántate y anda,avalanch,levántate y anda,73320,Avalanch,Levántate y Anda,2,2,1
+7,easy,raw,Paul Kalkbrenner,Seaquest,paul kalkbrenner,seaquest,paul kalkbrenner,seaquest,54764,Paul Kalkbrenner,Seaquest,1,23,1
+8,easy,artist_punctuation,Cannibal Corpse,Crushing The Despised,cannibal corpse,crushing the despised,cannibal corpse,crushing the despised,19132,Cannibal Corpse,Crushing the Despised,15,10,1
+9,easy,artist_punctuation,Flo Rida,Me & U,flo rida,me & u,flo rida,me & u,17529,Flo Rida,Me & U,4,2,3
+10,medium,track_version_suffix,Pink Floyd,Goodbye Blue Sky - Mono Version,pink floyd,goodbye blue sky - mono version,pink floyd,goodbye blue sky,62530,Pink Floyd,Goodbye Blue Sky,566,83,1
+11,medium,track_version_suffix,The Jackson 5,The Christmas Song - Mono Version,the jackson 5,the christmas song - mono version,the jackson 5,the christmas song,72677,The Jackson 5,The Christmas Song,4,13,17
+12,medium,artist_and_symbol,Ice Cube,You Know How We Do It,ice cube,you know how we do it,ice cube,you know how we do it,29902,Ice Cube,You Know How We Do It,48,4,1
+13,easy,track_punctuation,Dream Evil,The Chosen Ones,dream evil,the chosen ones,dream evil,the chosen ones,40444,Dream Evil,The Chosen Ones,19,7,1
+14,medium,track_version_suffix,Pink Floyd,A Great Day For Freedom - Remastered,pink floyd,a great day for freedom - remastered,pink floyd,a great day for freedom,62685,Pink Floyd,A Great Day for Freedom,292,83,1
+15,medium,track_version_suffix,Samael,Telepath - Live,samael,telepath - live,samael,telepath,5540,Samael,Telepath,161,25,1
+16,easy,artist_punctuation,Propellerheads,Bang On!,propellerheads,bang on!,propellerheads,bang on!,8898,Propellerheads,Bang On!,80,12,1
+17,medium,artist_and_symbol,Alphaville,Forever Young,alphaville,forever young,alphaville,forever young,75419,Alphaville,Forever Young,533,6,12
+18,easy,raw,Boards Of Canada,Dayvan Cowboy,boards of canada,dayvan cowboy,boards of canada,dayvan cowboy,3399,Boards of Canada,Dayvan Cowboy,1151,16,1
+19,easy,raw,Bodylotion,Happy Is Voor Hobo'S,bodylotion,happy is voor hobo's,bodylotion,happy is voor hobo's,36942,Bodylotion,Happy Is Voor Hobo's,2,2,1
+20,medium,track_version_suffix,Paul Kalkbrenner,Aaron - Live,paul kalkbrenner,aaron - live,paul kalkbrenner,aaron,54620,Paul Kalkbrenner,Aaron,23,23,1
+21,easy,raw,Moskwa,Powietrza,moskwa,powietrza,moskwa,powietrza,38522,Moskwa,Powietrza,7,1,1
+22,easy,artist_punctuation,Soilent Green,Her Unsober Ways,soilent green,her unsober ways,soilent green,her unsober ways,33672,Soilent Green,Her Unsober Ways,1,12,1
+23,medium,artist_and_symbol,Raffi,Baby Beluga,raffi,baby beluga,raffi,baby beluga,12623,Raffi,Baby Beluga,14,4,2
+24,hard,track_typo,Biquini Cavadão,Imposísvel,biquini cavadão,imposísvel,biquini cavadão,impossível,71327,Biquini Cavadão,Impossível,5,26,1
+25,medium,track_version_suffix,Aux 88,K-1 Theme - Live,aux 88,k-1 theme - live,aux 88,k-1 theme,20779,Aux 88,K-1 Theme,1,8,1
+26,easy,artist_punctuation,Yuri Buenaventura,Mala Vida,yuri buenaventura,mala vida,yuri buenaventura,mala vida,67706,Yuri Buenaventura,Mala Vida,10,5,1
+27,medium,artist_and_symbol,Hocico,The Shape Of Things To Come,hocico,the shape of things to come,hocico,the shape of things to come,45022,Hocico,The Shape of Things to Come,117,5,1
+28,easy,raw,Coal Chamber,Headstones And The Walking Dead,coal chamber,headstones and the walking dead,coal chamber,headstones and the walking dead,45235,Coal Chamber,Headstones and the Walking Dead,6,4,1
+29,hard,track_typo,Rei Harakami,2 Cremas,rei harakami,2 cremas,rei harakami,2 creams,43029,Rei Harakami,2 creams,2,26,1
+30,easy,raw,Ben Folds Five,Steven'S Last Night In Town,ben folds five,steven's last night in town,ben folds five,steven's last night in town,59706,Ben Folds Five,Steven's Last Night in Town,36,3,1
+31,medium,artist_and_symbol,Lamb Of God,Pathetic,lamb of god,pathetic,lamb of god,pathetic,34897,Lamb of God,Pathetic,166,37,1
+32,easy,raw,Pantera,Cowboys From Hell,pantera,cowboys from hell,pantera,cowboys from hell,34454,Pantera,Cowboys from Hell,1135,16,1
+33,easy,raw,Smash Mouth,All Star,smash mouth,all star,smash mouth,all star,2051,Smash Mouth,All Star,396,2,2
+34,medium,track_version_suffix,The Coffinshakers,Everything I Touch Turns To Tears - Remastered,the coffinshakers,everything i touch turns to tears - remastered,the coffinshakers,everything i touch turns to tears,33389,The Coffinshakers,Everything I Touch Turns to Tears,13,7,1
+35,easy,artist_punctuation,Roots Manuva,Artical,roots manuva,artical,roots manuva,artical,78908,Roots Manuva,Artical,12,19,1
+36,easy,artist_punctuation,Beenie Man,Nuff Gal,beenie man,nuff gal,beenie man,nuff gal,46886,Beenie Man,Nuff Gal,1,22,1
+37,hard,track_typo,Fuck On The Beach,Sdudenly Insert,fuck on the beach,sdudenly insert,fuck on the beach,suddenly insert,33929,Fuck On the Beach,Suddenly Insert,4,6,1
+38,easy,raw,Hypocrisy,Inquire Within,hypocrisy,inquire within,hypocrisy,inquire within,5701,Hypocrisy,Inquire Within,19,29,1
+39,medium,track_version_suffix,Los Hermanos,Tá Bom - Radio Edit,los hermanos,tá bom - radio edit,los hermanos,tá bom,55703,Los Hermanos,Tá Bom,3,21,1
+40,medium,track_version_suffix,Eve 6,Inside Out - Remastered,eve 6,inside out - remastered,eve 6,inside out,35465,Eve 6,Inside Out,97,5,6
+41,easy,artist_punctuation,Alter Bridge,Watch Over You,alter bridge,watch over you,alter bridge,watch over you,2235,Alter Bridge,Watch Over You,164,28,1
+42,easy,raw,Svenne Rubins,En Gammal Amazon,svenne rubins,en gammal amazon,svenne rubins,en gammal amazon,74851,Svenne Rubins,En Gammal Amazon,2,3,1
+43,medium,track_version_suffix,B.B. King,Why I Sing The Blues - Live,b.b. king,why i sing the blues - live,b.b. king,why i sing the blues,7335,B.B. King,Why I Sing The Blues,12,7,1
+44,medium,track_version_suffix,Lfo,Ultra Schall - Radio Edit,lfo,ultra schall - radio edit,lfo,ultra schall,43331,LFO,Ultra Schall,5,14,1
+45,easy,artist_punctuation,Allison,Mi Destino,allison,mi destino,allison,mi destino,63537,Allison,Mi Destino,1,10,1
+46,medium,artist_and_symbol,Carcass,Pyosisified (Still Rotten To The Gore),carcass,pyosisified,carcass,pyosisified,33818,Carcass,Pyosisified (Still Rotten to the Gore),20,32,1
+47,medium,artist_and_symbol,Nine Inch Nails,We'Re In This Together,nine inch nails,we're in this together,nine inch nails,we're in this together,44709,Nine Inch Nails,We're In This Together,928,21,1
+48,easy,track_punctuation,Pink Floyd,Nobody Home,pink floyd,nobody home,pink floyd,nobody home,62690,Pink Floyd,Nobody Home,473,83,1
+49,medium,artist_and_symbol,Orgone,It'S What You Do,orgone,it's what you do,orgone,it's what you do,1783,Orgone,It's What You Do,4,6,1
+50,easy,track_punctuation,New Model Army,White Coats,new model army,white coats,new model army,white coats,32869,New Model Army,White Coats,40,42,1
+51,easy,track_punctuation,Nirvana,Come As You Are,nirvana,come as you are,nirvana,come as you are,1952,Nirvana,Come As You Are,1980,50,3
+52,easy,track_punctuation,Ultraje A Rigor,Nos Vamos Invadir Sua Praia,ultraje a rigor,nos vamos invadir sua praia,ultraje a rigor,nós vamos invadir sua praia,7821,Ultraje a Rigor,Nós Vamos Invadir Sua Praia,35,12,1
+53,medium,track_version_suffix,Kenny Rogers,Coward Of The County - Mono Version,kenny rogers,coward of the county - mono version,kenny rogers,coward of the county,16925,Kenny Rogers,Coward Of The County,44,5,1
+54,easy,artist_punctuation,Alter Bridge,Blackbird,alter bridge,blackbird,alter bridge,blackbird,35063,Alter Bridge,Blackbird,64,28,1
+55,easy,raw,The Beach Boys,Little Saint Nick,the beach boys,little saint nick,the beach boys,little saint nick,62489,The Beach Boys,Little Saint Nick,86,31,1
+56,medium,track_version_suffix,Bloodbath,Eaten - Live,bloodbath,eaten - live,bloodbath,eaten,4973,Bloodbath,Eaten,105,1,1
+57,hard,track_typo,Ol' Dirty Bastard,Shimy Shimmy Ya,ol' dirty bastard,shimy shimmy ya,ol' dirty bastard,shimmy shimmy ya,2804,Ol' Dirty Bastard,Shimmy Shimmy Ya,157,2,3
+58,easy,raw,Plastilina Mosh,Shampoo,plastilina mosh,shampoo,plastilina mosh,shampoo,1080,Plastilina Mosh,Shampoo,1,33,2
+59,easy,track_punctuation,My Little Airport,奇人的離職,my little airport,奇人的離職,my little airport,奇人的離職,10851,my little airport,奇人的離職,4,163,1
+60,easy,track_punctuation,Attaque 77,El Cielo Puede Esperar,attaque 77,el cielo puede esperar,attaque 77,el cielo puede esperar,63109,Attaque 77,El Cielo Puede Esperar,1,20,1
+61,easy,raw,Thievery Corporation,Treasures,thievery corporation,treasures,thievery corporation,treasures,78718,Thievery Corporation,Treasures,263,19,1
+62,medium,track_version_suffix,Sade,Kiss Of Life - Live,sade,kiss of life - live,sade,kiss of life,9577,Sade,Kiss of Life,244,11,1
+63,medium,track_version_suffix,Backstreet Boys,I Want It That Way - Mono Version,backstreet boys,i want it that way - mono version,backstreet boys,i want it that way,17386,Backstreet Boys,I Want It That Way,157,1,3
+64,medium,track_version_suffix,Seefeel,Time To Find Me (Alternate Desk Mix) - Mono Version,seefeel,time to find me - mono version,seefeel,time to find me,43015,Seefeel,Time to Find Me (Come Inside),72,3,1
+65,easy,track_punctuation,The Birthday Massacre,Queen Of Hearts,the birthday massacre,queen of hearts,the birthday massacre,queen of hearts,45352,The Birthday Massacre,Queen of Hearts,35,9,5
+66,medium,artist_and_symbol,Theatre Of Tragedy,As The Shadows Dance,theatre of tragedy,as the shadows dance,theatre of tragedy,as the shadows dance,33207,Theatre Of Tragedy,As the Shadows Dance,20,2,1
+67,easy,raw,Blaqk Audio,On A Friday,blaqk audio,on a friday,blaqk audio,on a friday,45243,Blaqk Audio,On A Friday,81,6,1
+68,easy,raw,A-Ha,I'Ve Been Losing You,a-ha,i've been losing you,a-ha,i've been losing you,75398,a-ha,I've Been Losing You,139,18,1
+69,medium,track_version_suffix,Nancy Sinatra,Bang Bang (My Baby Shot Me Down) - Live,nancy sinatra,bang bang - live,nancy sinatra,bang bang,27892,Nancy Sinatra,Bang Bang (My Baby Shot Me Down),628,1,9
+70,medium,track_version_suffix,Hans Zimmer,Chant - Remastered,hans zimmer,chant - remastered,hans zimmer,chant,31448,Hans Zimmer,Chant,13,41,1
+71,medium,track_version_suffix,Lamb Of God,Redneck - Remastered,lamb of god,redneck - remastered,lamb of god,redneck,34453,Lamb of God,Redneck,262,37,1
+72,easy,artist_punctuation,Twisted Sister,I Wanna Rock,twisted sister,i wanna rock,twisted sister,i wanna rock,37722,Twisted Sister,I Wanna Rock,128,3,2
+73,easy,track_punctuation,Boøwy,Runaway Train,boøwy,runaway train,boøwy,runaway train,65531,BOØWY,RUNAWAY TRAIN,3,51,2
+74,medium,track_version_suffix,George Benson,Everything Must Change - Mono Version,george benson,everything must change - mono version,george benson,everything must change,36247,George Benson,Everything Must Change,2,8,1
+75,easy,artist_punctuation,Fine Young Cannibals,Good Thing,fine young cannibals,good thing,fine young cannibals,good thing,75610,Fine Young Cannibals,Good Thing,77,2,2
+76,easy,track_punctuation,Rexanthony,For You Marlene,rexanthony,for you marlene,rexanthony,for you marlene,37048,Rexanthony,For You Marlene,5,4,1
+77,easy,track_punctuation,Jomanda,Got A Love For You (HurleyS House Mix),jomanda,got a love for you,jomanda,got a love for you,11459,Jomanda,Got a Love for You,15,7,1
+78,easy,artist_punctuation,Kenan Dogulu,Sımsıkı Sıkı Sıkı,kenan dogulu,sımsıkı sıkı sıkı,kenan doğulu,sımsıkı sıkı sıkı,79341,Kenan Doğulu,Sımsıkı Sıkı Sıkı,1,4,1
+79,hard,track_typo,Blind Melon,The Duke,blind melon,the duke,blind melon,the duke,35389,Blind Melon,The Duke,13,4,1
+80,easy,track_punctuation,Mortician,Mortician,mortician,mortician,mortician,mortician,33801,Mortician,Mortician,2,36,1
+81,medium,artist_and_symbol,Abba,"Knowing Me, Knowing You",abba,"knowing me, knowing you",abba,"knowing me, knowing you",74757,ABBA,"Knowing Me, Knowing You",413,32,1
+82,medium,artist_and_symbol,Nelly Furtado,I'M Like A Bird,nelly furtado,i'm like a bird,nelly furtado,i'm like a bird,51160,Nelly Furtado,I'm Like A Bird,443,4,1
+83,medium,track_version_suffix,Alice In Chains,Them Bones - Radio Edit,alice in chains,them bones - radio edit,alice in chains,them bones,35150,Alice In Chains,Them Bones (2022 Remaster),732,21,1
+84,medium,track_version_suffix,Mägo De Oz,Diabulus In Música - Mono Version,mägo de oz,diabulus in música - mono version,mägo de oz,diabulus in música,73093,Mägo de Oz,Diabulus In Música,44,37,1
+85,easy,raw,Slipknot,Duality,slipknot,duality,slipknot,duality,2688,Slipknot,Duality,739,19,2
+86,easy,raw,Calle 13,Electro Movimiento,calle 13,electro movimiento,calle 13,electro movimiento,1685,Calle 13,Electro Movimiento,141,20,1
+87,medium,track_version_suffix,The Knife,Heartbeats - Mono Version,the knife,heartbeats - mono version,the knife,heartbeats,33449,The Knife,Heartbeats,3581,3,3
+88,medium,artist_and_symbol,Randy Newman,Same Girl,randy newman,same girl,randy newman,same girl,22427,Randy Newman,Same Girl,6,56,1
+89,medium,track_version_suffix,O Teatro Mágico,O Anjo Mais Velho - Mono Version,o teatro mágico,o anjo mais velho - mono version,o teatro mágico,o anjo mais velho,8130,O Teatro Mágico,O Anjo Mais Velho,8,5,1
+90,easy,artist_punctuation,My Little Airport,美孚根斯堡與白田珍寶金,my little airport,美孚根斯堡與白田珍寶金,my little airport,美孚根斯堡與白田珍寶金,10472,my little airport,美孚根斯堡與白田珍寶金,8,163,1
+91,easy,track_punctuation,Dillinger Four,A Jingle For The Product,dillinger four,a jingle for the product,dillinger four,a jingle for the product,61100,Dillinger Four,A Jingle for the Product,23,6,1
+92,medium,track_version_suffix,Vampire Weekend,Campus - Remastered,vampire weekend,campus - remastered,vampire weekend,campus,44324,Vampire Weekend,Campus,469,1,1
+93,easy,track_punctuation,Alanis Morissette,You Oughta Know,alanis morissette,you oughta know,alanis morissette,you oughta know,70562,Alanis Morissette,You Oughta Know,866,2,1
+94,medium,track_version_suffix,David Holmes,$165 Million + Interest (Into) The Round Up - Remastered,david holmes,$165 million + interest the round up - remastered,david holmes,$165 million + interest the round up,78440,David Holmes,$165 Million + Interest (Intro) The Round Up,8,6,1
+95,easy,artist_punctuation,Hole,Petals,hole,petals,hole,petals,35498,Hole,Petals,62,7,3
+96,easy,raw,Creed,Weathered,creed,weathered,creed,weathered,35584,Creed,Weathered,103,17,1
+97,hard,track_typo,Beenie Man,Row Like A Boat,beenie man,row like a boat,beenie man,row like a boat,17926,Beenie Man,Row Like A Boat,2,22,1
+98,medium,artist_and_symbol,Chixdiggit!,Welcome To The Daiso,chixdiggit!,welcome to the daiso,chixdiggit!,welcome to the daiso,61725,Chixdiggit!,Welcome to the Daiso,23,6,1
+99,easy,artist_punctuation,36 Crazyfists,Installing The Catheter,36 crazyfists,installing the catheter,36 crazyfists,installing the catheter,35018,36 Crazyfists,Installing the Catheter,8,6,1
+100,medium,track_version_suffix,Beenie Man,Let Him Go - Remastered,beenie man,let him go - remastered,beenie man,let him go,46639,Beenie Man,Let Him Go,3,22,2
+101,easy,raw,Julian Cope,World Shut Your Mouth,julian cope,world shut your mouth,julian cope,world shut your mouth,62776,Julian Cope,World Shut Your Mouth,76,1,1
+102,easy,raw,Os Paralamas Do Sucesso,Caleidoscópio,os paralamas do sucesso,caleidoscópio,os paralamas do sucesso,caleidoscópio,55815,Os Paralamas Do Sucesso,Caleidoscópio,2,13,1
+103,hard,track_typo,Fluke,Frek,fluke,frek,fluke,freak,8811,Fluke,Freak,10,19,6
+104,easy,track_punctuation,Two Lone Swordsmen,Tiny Reminder No 1,two lone swordsmen,tiny reminder no 1,two lone swordsmen,tiny reminder no. 1,43032,Two Lone Swordsmen,Tiny Reminder No. 1,26,13,1
+105,easy,track_punctuation,Mortician,Tormented,mortician,tormented,mortician,tormented,33670,Mortician,Tormented,4,36,1
+106,medium,track_version_suffix,Lacuna Coil,Lost Lullaby (Unreleased Bonus) - Radio Edit,lacuna coil,lost lullaby - radio edit,lacuna coil,lost lullaby,33320,Lacuna Coil,Lost Lullaby,38,12,1
+107,medium,artist_and_symbol,Plastilina Mosh,Niño Bomba,plastilina mosh,niño bomba,plastilina mosh,niño bomba,1065,Plastilina Mosh,Niño Bomba,4,33,1
+108,hard,track_typo,Nirvana,Aout A Girl,nirvana,aout a girl,nirvana,about a girl,2279,Nirvana,About A Girl,1420,50,1
+109,medium,track_version_suffix,Clannad,Theme From Harry'S Game - Live,clannad,theme from harry's game - live,clannad,theme from harry's game,56732,Clannad,Theme from Harry's Game,105,17,1
+110,medium,track_version_suffix,Samael,Chosen Race - Live,samael,chosen race - live,samael,chosen race,5048,Samael,Chosen Race,11,25,1
+111,medium,artist_and_symbol,Tina Turner,The Best,tina turner,the best,tina turner,the best,21271,Tina Turner,The Best,86,5,2
+112,easy,raw,Discordance Axis,Information Sniper,discordance axis,information sniper,discordance axis,information sniper,34072,Discordance Axis,Information Sniper,6,16,1
+113,easy,artist_punctuation,Redd,Hala Aşk Var Mı,redd,hala aşk var mı,redd,hala aşk var mı,79661,Redd,Hala Aşk Var mı,2,4,1
+114,medium,track_version_suffix,Papa Dance,Maxi Singiel - Mono Version,papa dance,maxi singiel - mono version,papa dance,maxi singiel,75543,Papa Dance,Maxi Singiel,2,6,1
+115,medium,track_version_suffix,Ed Gein,Beating A Dead Horse - Live,ed gein,beating a dead horse - live,ed gein,beating a dead horse,34428,Ed Gein,Beating a Dead Horse,10,4,1
+116,medium,track_version_suffix,Connie Francis,Who'S Sorry Now - Mono Version,connie francis,who's sorry now - mono version,connie francis,who's sorry now,65577,Connie Francis,Who's Sorry Now,42,9,1
+117,medium,track_version_suffix,The Toasters,Don'T Let The Bastards Grind You Down - Live,the toasters,don't let the bastards grind you down - live,the toasters,don't let the bastards grind you down,71211,The Toasters,Don't Let The Bastards Grind You Down,15,2,1
+118,medium,artist_and_symbol,Ayten Alpman,Sensiz Olmam,ayten alpman,sensiz olmam,ayten alpman,sensiz olmam,48704,Ayten Alpman,Sensiz Olmam,20,2,1
+119,easy,raw,Roy Orbison,California Blue,roy orbison,california blue,roy orbison,california blue,65851,Roy Orbison,California Blue,12,10,1
+120,easy,track_punctuation,Elton John,Something About The Way You Look Tonight (Edit Version),elton john,something about the way you look tonight,elton john,something about the way you look tonight,59784,Elton John,Something About The Way You Look Tonight,66,31,1
+121,easy,track_punctuation,Israel Vibration,Back Staba,israel vibration,back staba,israel vibration,back staba,24201,Israel Vibration,Back Staba,1,6,1
+122,easy,raw,Nickel Creek,Somebody More Like You,nickel creek,somebody more like you,nickel creek,somebody more like you,6383,Nickel Creek,Somebody More Like You,26,24,1
+123,easy,track_punctuation,No Doubt,Oi To The World,no doubt,oi to the world,no doubt,oi to the world,2031,No Doubt,Oi To The World,82,5,1
+124,medium,track_version_suffix,Rammstein,Rammstein (Edit) - Radio Edit,rammstein,rammstein - radio edit,rammstein,rammstein,44705,Rammstein,Rammstein,258,70,1
+125,medium,artist_and_symbol,Archive,Fuck U,archive,fuck u,archive,fuck u,78159,Archive,Fuck U,141,7,1
+126,easy,track_punctuation,Jimmy Eat World,Sweetness (Live),jimmy eat world,sweetness,jimmy eat world,sweetness,61079,Jimmy Eat World,Sweetness,572,24,1
+127,easy,artist_punctuation,Boøwy,Down Town Shuffle,boøwy,down town shuffle,boøwy,down town shuffle,65529,BOØWY,DOWN TOWN SHUFFLE,3,51,1
+128,easy,artist_punctuation,Scary Kids Scaring Kids,The Bright Side Of Suffering,scary kids scaring kids,the bright side of suffering,scary kids scaring kids,the bright side of suffering,54069,Scary Kids Scaring Kids,The Bright Side of Suffering,32,4,1
+129,easy,track_punctuation,Linkin Park,In The End,linkin park,in the end,linkin park,in the end,2680,Linkin Park,In the End,1008,83,5
+130,easy,track_punctuation,Yiruma,Kiss The Rain,yiruma,kiss the rain,yiruma,kiss the rain,14176,Yiruma,Kiss The Rain,4,52,1
+131,easy,artist_punctuation,Chaka Khan,I'M Every Woman,chaka khan,i'm every woman,chaka khan,i'm every woman,21611,Chaka Khan,I'm Every Woman,95,5,1
+132,easy,track_punctuation,Dmx,Ruff Ryders Anthem (Live),dmx,ruff ryders anthem,dmx,ruff ryders' anthem,38258,DMX,Ruff Ryders' Anthem,23,6,1
+133,medium,artist_and_symbol,Nirvana,Plateau,nirvana,plateau,nirvana,plateau,35224,Nirvana,Plateau,287,50,1
+134,hard,track_typo,Amorphis,Stonewoman (oBnus Track),amorphis,stonewoman,amorphis,stonewoman,19210,Amorphis,Stonewoman,89,6,1
+135,medium,track_version_suffix,Audioslave,Gasoline - Mono Version,audioslave,gasoline - mono version,audioslave,gasoline,35666,Audioslave,Gasoline,686,10,6
+136,easy,raw,Rammstein,Amerika,rammstein,amerika,rammstein,amerika,44588,Rammstein,Amerika,570,70,2
+137,medium,track_version_suffix,The Poets Of Rhythm,Plus Plus - Remastered,the poets of rhythm,plus plus - remastered,the poets of rhythm,plus plus,1648,The Poets Of Rhythm,Plus Plus,5,7,1
+138,medium,track_version_suffix,Yonder Mountain String Band,Idaho - Remastered,yonder mountain string band,idaho - remastered,yonder mountain string band,idaho,6335,Yonder Mountain String Band,Idaho,7,26,1
+139,easy,track_punctuation,Freddie King,IM Tore Down,freddie king,im tore down,freddie king,i'm tore down,630,Freddie King,I'm Tore Down,2,3,1
+140,easy,artist_punctuation,Atrocity,Send Me An Angel,atrocity,send me an angel,atrocity,send me an angel,33278,Atrocity,Send Me an Angel,5,1,4
+141,medium,track_version_suffix,Cem Karaca,Sakın Reddetme - Remastered,cem karaca,sakın reddetme - remastered,cem karaca,sakın reddetme,62574,Cem Karaca,Sakın Reddetme,3,29,1
+142,easy,raw,Gustavo Santaolalla,The Wings,gustavo santaolalla,the wings,gustavo santaolalla,the wings,3529,Gustavo Santaolalla,The Wings,250,11,1
+143,easy,artist_punctuation,Fall Out Boy,"Sugar, We'Re Goin Down",fall out boy,"sugar, we're goin down",fall out boy,"sugar, we're goin down",26475,Fall Out Boy,"Sugar, We're Goin Down",75,19,1
+144,easy,track_punctuation,Federico Aubele,Lluvia,federico aubele,lluvia,federico aubele,lluvia,78537,Federico Aubele,Lluvia,12,5,5
+145,easy,track_punctuation,Cruachan,Celtica (Voice Of The Morrigan),cruachan,celtica,cruachan,celtica,5419,Cruachan,Celtica (Voice of Morrigan),26,1,2
+146,medium,track_version_suffix,Freestylers Feat. Pendulum & Sirreal,Painkiller(Ed Solo&Skool Of Thought Remix) - Remastered,freestylers,painkiller - remastered,freestylers,painkiller,8831,Freestylers,Painkiller,26,27,7
+147,easy,raw,Red Hot Chili Peppers,My Friends,red hot chili peppers,my friends,red hot chili peppers,my friends,65268,Red Hot Chili Peppers,My Friends,452,34,2
+148,easy,track_punctuation,Weezer,We Wish You A Merry Christmas,weezer,we wish you a merry christmas,weezer,we wish you a merry christmas,1942,Weezer,We Wish You A Merry Christmas,3,29,6
+149,easy,raw,Cascada,Evacuate The Dancefloor (Radio Edit),cascada,evacuate the dancefloor,cascada,evacuate the dancefloor,77071,Cascada,Evacuate The Dancefloor,126,5,1
+150,medium,track_version_suffix,Boris Brejcha,My Love - Live,boris brejcha,my love - live,boris brejcha,my love,55074,Boris Brejcha,My Love,1,47,6
+151,medium,artist_and_symbol,Lfo,Mentok 1,lfo,mentok 1,lfo,mentok 1,43016,LFO,Mentok 1,11,14,1
+152,easy,raw,Through The Eyes Of The Dead,Beneath Dying Skies,through the eyes of the dead,beneath dying skies,through the eyes of the dead,beneath dying skies,18707,Through The Eyes of the Dead,Beneath Dying Skies,70,5,1
+153,easy,artist_punctuation,David Bisbal,Dígale,david bisbal,dígale,david bisbal,dígale,51175,David Bisbal,Dígale,1,8,2
+154,easy,track_punctuation,Randy Newman,Little Criminals,randy newman,little criminals,randy newman,little criminals,22179,Randy Newman,Little Criminals,3,56,1
+155,easy,track_punctuation,Skunk Anansie,All In The Name Of Pity,skunk anansie,all in the name of pity,skunk anansie,all in the name of pity,9978,Skunk Anansie,All In The Name Of Pity,52,2,1
+156,easy,raw,Type O Negative,Black No. 1 (Little Miss Scare-All),type o negative,black no. 1,type o negative,black no. 1,32835,Type O Negative,Black No. 1 (Little Miss Scare -All),259,11,1
+157,easy,track_punctuation,Lars Frederiksen And The Bastards,Skunx,lars frederiksen and the bastards,skunx,lars frederiksen and the bastards,skunx,71596,Lars Frederiksen and the Bastards,Skunx,6,4,1
+158,hard,track_typo,Red Hot Chili Peppers,Ca'T Stop,red hot chili peppers,ca't stop,red hot chili peppers,can't stop,2048,Red Hot Chili Peppers,Can't Stop,897,34,2
+159,hard,track_typo,The Rolling Stones,Hapy,the rolling stones,hapy,the rolling stones,happy,9689,The Rolling Stones,Happy,252,37,7
+160,easy,track_punctuation,Tři Sestry,Kovarna I,tři sestry,kovarna i,tři sestry,kovárna i,63305,Tři Sestry,Kovárna I,1,6,1
+161,hard,track_typo,Jorge Drexler,La Hella De Tu Mirada,jorge drexler,la hella de tu mirada,jorge drexler,la huella de tu mirada,1288,Jorge Drexler,La huella de tu mirada,1,51,1
+162,easy,raw,Pink Floyd,Hey You,pink floyd,hey you,pink floyd,hey you,62499,Pink Floyd,Hey You,1089,83,3
+163,medium,track_version_suffix,Soilent Green,Cold-Steel Kiss - Live,soilent green,cold-steel kiss - live,soilent green,cold-steel kiss,34146,Soilent Green,Cold-Steel Kiss,3,12,1
+164,easy,track_punctuation,Mortician,Dr Gore,mortician,dr gore,mortician,dr. gore,34103,Mortician,Dr. Gore,3,36,1
+165,hard,track_typo,The Jacksons,This Place Htel,the jacksons,this place htel,the jacksons,this place hotel,21451,The Jacksons,This Place Hotel (a.k.a. Heartbreak Hotel),11,5,1
+166,easy,artist_punctuation,Maanam,Lipstick On The Glass,maanam,lipstick on the glass,maanam,lipstick on the glass,63603,Maanam,Lipstick on the Glass,37,1,1
+167,easy,raw,Metallica,Sad But True,metallica,sad but true,metallica,sad but true,37681,Metallica,Sad But True,938,25,3
+168,easy,artist_punctuation,The Soundtrack Of Our Lives,Grand Canaria,the soundtrack of our lives,grand canaria,the soundtrack of our lives,grand canaria,33381,The Soundtrack Of Our Lives,Grand Canaria,8,4,1
+169,medium,track_version_suffix,Dope,Die Mf Die - Mono Version,dope,die mf die - mono version,dope,die mf die,44585,Dope,Die MF Die,76,8,1
+170,medium,artist_and_symbol,Hooverphonic,Sometimes,hooverphonic,sometimes,hooverphonic,sometimes,78216,Hooverphonic,Sometimes,113,17,8
+171,easy,artist_punctuation,Tim Story,A Broken Alphabet,tim story,a broken alphabet,tim story,a broken alphabet,56369,Tim Story,A Broken Alphabet,1,3,1
+172,medium,artist_and_symbol,Chicago,If You Leave Me Now,chicago,if you leave me now,chicago,if you leave me now,70926,Chicago,If You Leave Me Now,197,6,1
+173,hard,track_typo,Barış Manço,Ayrıık,barış manço,ayrıık,barış manço,ayrılık,62563,Barış Manço,Ayrılık,8,28,1
+174,medium,track_version_suffix,Pink Floyd,Green Is The Colour - Radio Edit,pink floyd,green is the colour - radio edit,pink floyd,green is the colour,62591,Pink Floyd,Green Is the Colour,109,83,1
+175,easy,artist_punctuation,Donna Summer,I Feel Love,donna summer,i feel love,donna summer,i feel love,21108,Donna Summer,I Feel Love,447,7,1
+176,medium,track_version_suffix,The Blasters,Marie Marie - Mono Version,the blasters,marie marie - mono version,the blasters,marie marie,64974,The Blasters,Marie Marie,13,3,2
+177,hard,track_typo,Zeca Pagodinho,Maneco Telceoteco,zeca pagodinho,maneco telceoteco,zeca pagodinho,maneco telecoteco,68522,Zeca Pagodinho,Maneco Telecoteco,6,47,1
+178,medium,track_version_suffix,Rotting Christ,Full Colour Is The Night - Live,rotting christ,full colour is the night - live,rotting christ,full colour is the night,5307,Rotting Christ,Full Colour Is the Night,6,19,1
+179,medium,artist_and_symbol,The Wailin' Jennys,This Is Where,the wailin' jennys,this is where,the wailin' jennys,this is where,6526,The Wailin' Jennys,This Is Where,1,12,1
+180,easy,artist_punctuation,Elton John,Crocodile Rock,elton john,crocodile rock,elton john,crocodile rock,59332,Elton John,Crocodile Rock,196,31,2
+181,easy,artist_punctuation,George Jones,Tall Tall Trees,george jones,tall tall trees,george jones,tall tall trees,41808,George Jones,Tall Tall Trees,1,211,1
+182,easy,raw,Nina Simone,Don'T Let Me Be Misunderstood,nina simone,don't let me be misunderstood,nina simone,don't let me be misunderstood,6994,Nina Simone,Don't Let Me Be Misunderstood,229,9,4
+183,easy,raw,The Records,Starry Eyes,the records,starry eyes,the records,starry eyes,61771,The Records,Starry Eyes,15,1,2
+184,easy,raw,The Fortunes,Here Comes That Rainy Day Feeling Again,the fortunes,here comes that rainy day feeling again,the fortunes,here comes that rainy day feeling again,9896,The Fortunes,Here Comes That Rainy Day Feeling Again,8,1,1
+185,medium,artist_and_symbol,Celtic Woman,You Raise Me Up,celtic woman,you raise me up,celtic woman,you raise me up,56976,Celtic Woman,You Raise Me Up,7,20,4
+186,medium,track_version_suffix,Celtic Woman,Harry'S Game - Remastered,celtic woman,harry's game - remastered,celtic woman,harry's game,57205,Celtic Woman,Harry's Game,5,20,1
+187,easy,raw,Ill Niño,All I Ask For,ill niño,all i ask for,ill niño,all i ask for,44644,Ill Niño,All I Ask For,23,8,1
+188,medium,track_version_suffix,Mr. Airplane Man,Not Living At All - Remastered,mr. airplane man,not living at all - remastered,mr. airplane man,not living at all,31280,Mr. Airplane Man,Not Living at All,3,1,1
+189,medium,track_version_suffix,Hocico,Poltergeist - Radio Edit,hocico,poltergeist - radio edit,hocico,poltergeist,44931,Hocico,Poltergeist,58,5,2
+190,easy,raw,Foo Fighters,Big Me,foo fighters,big me,foo fighters,big me,35414,Foo Fighters,Big Me,387,23,1
+191,hard,track_typo,Napalm Death,Evolevd As One,napalm death,evolevd as one,napalm death,evolved as one,33664,Napalm Death,Evolved As One,6,72,1
+192,easy,raw,Emperor,Of Blindness And Subsequent Seers,emperor,of blindness and subsequent seers,emperor,of blindness and subsequent seers,5553,Emperor,Of Blindness And Subsequent Seers,2,4,1
+193,easy,artist_punctuation,Abba,Mamma Mia,abba,mamma mia,abba,mamma mia,74756,ABBA,Mamma Mia,378,32,3
+194,easy,artist_punctuation,Live,Heaven,live,heaven,live,heaven,35774,Live,Heaven,95,11,20
+195,easy,artist_punctuation,Mark Farina,Midnight Calling,mark farina,midnight calling,mark farina,midnight calling,11801,Mark Farina,Midnight Calling,14,19,1
+196,hard,track_typo,Svenne Rubins,Det Var Samma Dag Som Brandstation Bran Ner,svenne rubins,det var samma dag som brandstation bran ner,svenne rubins,det var samma dag som brandstation brann ner,75200,Svenne Rubins,Det Var Samma Dag Som Brandstation Brann Ner,1,3,1
+197,easy,raw,Steel Pulse,Your House (Dub Version),steel pulse,your house,steel pulse,your house,24152,Steel Pulse,Your House,5,11,1
+198,easy,raw,Nat King Cole,Nature Boy,nat king cole,nature boy,nat king cole,nature boy,49026,Nat King Cole,Nature Boy,71,20,1
+199,medium,track_version_suffix,Mel & Kim,Respectable - Live,mel & kim,respectable - live,mel & kim,respectable,75671,Mel & Kim,Respectable,52,1,1

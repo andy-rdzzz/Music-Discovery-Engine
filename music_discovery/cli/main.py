@@ -7,7 +7,6 @@ from pathlib import Path
 from typing import Optional
 
 import typer
-import yaml
 
 app = typer.Typer(help="Music Discovery Engine — popularity-free recommendations.")
 
@@ -17,6 +16,12 @@ def _load_config(config_path: str | None) -> dict:
         default = Path(__file__).parents[2] / "configs" / "default.yaml"
         config_path = str(default) if default.exists() else None
     if config_path and Path(config_path).exists():
+        try:
+            import yaml
+        except ImportError as exc:
+            raise RuntimeError(
+                "PyYAML is required to read config files. Install pyyaml or run without a config file."
+            ) from exc
         with open(config_path) as f:
             return yaml.safe_load(f)
     return {}
@@ -96,10 +101,12 @@ def process(
     lastfm_df = load_lastfm_events(lastfm_path)
 
     typer.echo("[process] Building triplets...")
+    miss_log = Path(out_dir) / "unmatched_events.parquet"
     triplets_df, user_history_df = build_triplets(
         lastfm_df, track_features_df,
         gap_minutes=gap,
         min_session_length=min_sess,
+        miss_log_path=miss_log,
     )
 
     save_processed(track_features_df, triplets_df, user_history_df, out_dir)
@@ -178,7 +185,7 @@ def recommend(
     if "is_discovery" in eval_rows.columns:
         eval_rows = eval_rows[eval_rows["is_discovery"]]
     held_out_raw = eval_rows["track_idx"].to_numpy()
-    held_out = held_out_raw[(held_out_raw >= 0) & (held_out_raw < len(candidate_emb))]
+    held_out = np.unique(held_out_raw[(held_out_raw >= 0) & (held_out_raw < len(candidate_emb))])
     weights = optimize_weights(
         candidate_emb, candidate_artists, persona,
         user_history_emb, user_history_artists, held_out,
@@ -219,6 +226,41 @@ def recommend(
         typer.echo(f"  #{r['rank']:2d}  {r['artist']} — {r['track']}")
 
 
+
+# ---------------------------------------------------------------------------
+# Analyze-coverage
+# ---------------------------------------------------------------------------
+@app.command("analyze-coverage")
+def analyze_coverage(
+    config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
+    processed_dir: str = typer.Option("data/processed", help="Directory with processed parquet files"),
+    output: str = typer.Option("data/processed/coverage_report.json", help="Output path for coverage report"),
+    near_miss_threshold: int = typer.Option(70, help="Minimum fuzzy score to consider a near-miss")
+):
+    """ Analyze unmmatched events and surface candidate normalization rules"""
+    from music_discovery.data.kaggle_spotify import load_kaggle_tracks
+    from music_discovery.data.coverage_analysis import analyze_coverage as run_analysis
+    
+    cfg = _load_config(config)
+    data_cfg = cfg.get("data", {})
+    kaggle_path = data_cfg.get("kaggle_csv", "data/raw/spotify_tracks.csv")
+    unmatched_path = Path(processed_dir) / "unmatched_events.parquet"
+    
+    if not unmatched_path.exists():
+        typer.echo(f"[coverage] No unmatched_events.parquet found at {unmatched_path}. Run 'process' first")
+        raise typer.Exit(1)
+    
+    typer.echo("[coverage] Loading Kaggle catalog...")
+    catalog_df = load_kaggle_tracks(kaggle_path)
+    
+    typer.echo("[coverage] Analyzing unmatched events...")
+    run_analysis(
+        unmatched_events_path=unmatched_path,
+        catalog_df=catalog_df,
+        output_path=output,
+        near_miss_threshold=near_miss_threshold,
+    )
+    
 # ---------------------------------------------------------------------------
 # evaluate (sub-commands)
 # ---------------------------------------------------------------------------
@@ -278,6 +320,35 @@ def evaluate_recommendation_quality(
     """Recommendation quality: Replay@K, Discovery@K, NDCG@K, artist repetition, persona coverage."""
     from music_discovery.evaluate.recommendation_quality import run as run_rq
     run_rq(processed_dir, embeddings_path, personas_dir, output_dir, n_users, k)
+
+
+@evaluate_app.command("matching-quality")
+def evaluate_matching_quality(
+    kaggle_csv: str = typer.Option("data/raw/spotify_tracks.csv"),
+    lastfm_tsv: str = typer.Option("data/raw/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv"),
+    benchmark_csv: str = typer.Option("data/eval/matching_benchmark.csv"),
+    output_dir: str = typer.Option("results/matching_quality"),
+    n_records: int = typer.Option(200, help="Benchmark size; must be between 100 and 300."),
+    seed: int = typer.Option(42),
+    predictions_csv: Optional[str] = typer.Option(
+        None,
+        help="Optional CSV with benchmark_id,predicted_track_idx|predicted_artist_norm,predicted_track_norm,score,accepted",
+    ),
+    regenerate: bool = typer.Option(False, help="Rebuild the benchmark CSV before scoring."),
+):
+    """Generate/score a 100-300 row benchmark for matching Last.fm queries to Spotify tracks."""
+    from music_discovery.evaluate.matching_quality import run as run_mq
+
+    run_mq(
+        kaggle_csv=kaggle_csv,
+        lastfm_tsv=lastfm_tsv,
+        benchmark_csv=benchmark_csv,
+        output_dir=output_dir,
+        n_records=n_records,
+        seed=seed,
+        predictions_csv=predictions_csv,
+        regenerate=regenerate,
+    )
 
 
 if __name__ == "__main__":

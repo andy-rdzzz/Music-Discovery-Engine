@@ -1,25 +1,15 @@
 from __future__ import annotations
 
-import re
 import pandas as pd
 from pathlib import Path
+
+from music_discovery.data.normalization import normalize_name
 
 REQUIRED_FEATURES = [
     "danceability", "energy", "loudness", "speechiness",
     "acousticness", "instrumentalness", "liveness", "valence", "tempo",
 ]
 TRACK_ID_COLS = ["artists", "track_name"]
-
-
-def _normalize_name(s: object) -> str:
-    """Expanded normalization: lowercase, strip parentheticals and featured-artist credits."""
-    if not isinstance(s, str):
-        return ""
-    s = s.lower().strip()
-    s = re.sub(r"\s*\(.*?\)", "", s)          # strip (Remastered), (feat. X), etc.
-    s = re.sub(r"\s+(?:feat|ft)\.?\s+.*", "", s)  # strip feat. X at end
-    s = re.sub(r"\s+", " ", s).strip()
-    return s
 
 
 def load_kaggle_tracks(csv_path: str | Path) -> pd.DataFrame:
@@ -34,9 +24,8 @@ def load_kaggle_tracks(csv_path: str | Path) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing columns in Kaggle CSV: {missing}")
 
-    # Fix 1: expanded normalization
-    df["artist_norm"] = df["artists"].apply(_normalize_name)
-    df["track_norm"] = df["track_name"].apply(_normalize_name)
+    df["artist_norm"] = df["artists"].apply(normalize_name)
+    df["track_norm"] = df["track_name"].apply(normalize_name)
     df = df[(df["artist_norm"] != "") & (df["track_norm"] != "")]
 
     before = len(df)

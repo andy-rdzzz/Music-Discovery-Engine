@@ -11,4 +11,5 @@ seaborn
 umap-learn
 tqdm
 kaggle
+rapidfuzz>=3.0
 pytest

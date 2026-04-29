@@ -85,6 +85,11 @@ def run(
     for user_id in tqdm(users, desc="Users"):
         train = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "train")]
         eval_ = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "eval")]
+
+        # Filter eval to discovery-only rows when the column is available
+        if "is_discovery" in eval_.columns:
+            eval_ = eval_[eval_["is_discovery"]]
+
         train_idx = train["track_idx"].to_numpy()
         eval_idx = eval_["track_idx"].to_numpy()
         valid_train = train_idx[train_idx < len(candidate_emb)]
