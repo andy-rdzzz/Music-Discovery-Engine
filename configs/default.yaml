@@ -1,39 +1,31 @@
 data:
-  kaggle_csv: data/raw/spotify_tracks.csv
-  lastfm_tsv: data/raw/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv
+  taste_profile: data/raw/train_triplets.txt
+  track_metadata_db: data/raw/track_metadata.db
+  sid_mismatches: data/raw/sid_mismatches.txt
+  lastfm_tags_db: data/raw/lastfm_tags.db
+  lastfm_similars_db: data/raw/lastfm_similars.db
+  artist_similarity_db: data/raw/artist_similarity.db
+  msd_summary_h5: data/raw/msd_summary_file.h5   # optional
   processed_dir: data/processed
-  session_gap_minutes: 30
-  min_session_length: 2        # discard sessions with < 2 tracks
-  train_split: 0.8             # temporal split per user
+  sample_n_users: null       # null = full dataset; set int for dev subsampling
+  min_play_count: 1          # drop interactions below this threshold
+  holdout_k: 10              # interactions randomly withheld per user for val/test
+  skip_side_info: false      # set true to skip tags/similars during dev iteration
 
-features:
-  loudness_min: -60.0
-  loudness_max: 0.0
-  tempo_min: 40.0
-  tempo_max: 220.0
-
-model:
-  input_dim: 10
-  hidden_dims: [64, 48]
-  embedding_dim: 16
-  dropout: 0.35
-
-training:
-  batch_size: 256
-  epochs: 50
-  lr: 0.001
-  weight_decay: 2e-3
-  margin: 0.4
-  patience: 10
-  uniformity_weight: 0.05
+als:
+  factors: 128
+  iterations: 20
+  regularization: 0.01
+  use_gpu: false
 
 gmm:
   k_min: 2
   k_max: 10
   covariance_type: full
+  min_songs_per_user: 20     # fallback to single Gaussian below this
 
 scoring:
-  default_weights: [0.45, 0.30, 0.15, 0.10]   # [persona_fit, novelty, emotional_fit, familiarity]
+  default_weights: [0.45, 0.30, 0.15, 0.10]   # [sonic_fit, novelty, emotional_fit, familiarity]
 
 recommend:
   persona_temp: 0.7          # tau: <1 flattens allocation, =1 raw proportional

@@ -1,11 +1,11 @@
 from __future__ import annotations
+
 import json
-import pickle
-import numpy as np
-import pandas as pd
 from pathlib import Path
 from typing import Optional
 
+import numpy as np
+import pandas as pd
 import typer
 
 app = typer.Typer(help="Music Discovery Engine — popularity-free recommendations.")
@@ -19,112 +19,82 @@ def _load_config(config_path: str | None) -> dict:
         try:
             import yaml
         except ImportError as exc:
-            raise RuntimeError(
-                "PyYAML is required to read config files. Install pyyaml or run without a config file."
-            ) from exc
+            raise RuntimeError("PyYAML required. Run: pip install pyyaml") from exc
         with open(config_path) as f:
             return yaml.safe_load(f)
     return {}
 
 
 # ---------------------------------------------------------------------------
-# train
-# ---------------------------------------------------------------------------
-
-@app.command()
-def train(
-    data_dir: str = typer.Option("data/processed", help="Directory with track_features.parquet and triplets.parquet"),
-    output_dir: str = typer.Option("models/embeddings", help="Where to save embedding_model.pt"),
-    config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
-    epochs: Optional[int] = typer.Option(None, help="Override epochs from config"),
-    device: Optional[str] = typer.Option(None, help="cpu | cuda | mps"),
-):
-    """Train the metric learning MLP on Last.fm triplets."""
-    from music_discovery.train.train_embeddings import train_embeddings, embed_all_tracks
-
-    data = Path(data_dir)
-    # Resolve config path so train_embeddings always reads the file
-    resolved_config = config or str(Path(__file__).parents[2] / "configs" / "default.yaml")
-    cfg = _load_config(resolved_config)
-    if epochs is not None:
-        cfg.setdefault("training", {})["epochs"] = epochs
-
-    typer.echo(f"[train] Loading data from {data}")
-    model = train_embeddings(
-        track_features_path=data / "track_features.parquet",
-        triplets_path=data / "triplets.parquet",
-        output_dir=output_dir,
-        config_path=resolved_config,
-        device=device,
-    )
-
-    typer.echo("[train] Embedding all tracks...")
-    embed_all_tracks(
-        model=model,
-        track_features_path=data / "track_features.parquet",
-        output_path=Path(output_dir) / "track_embeddings.parquet",
-        device=device,
-    )
-    typer.echo(f"[train] Done. Model + embeddings saved to {output_dir}")
-
-
-# ---------------------------------------------------------------------------
-# process  (data pipeline)
+# process  — MSD data pipeline
 # ---------------------------------------------------------------------------
 
 @app.command()
 def process(
     config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
+    skip_side_info: bool = typer.Option(False, help="Skip tags/similars/artist-graph (faster dev iteration)"),
 ):
-    """Run the full data pipeline: Kaggle + Last.fm → processed parquet files."""
-    from music_discovery.data.kaggle_spotify import load_kaggle_tracks
-    from music_discovery.data.lastfm import load_lastfm_events
-    from music_discovery.data.triplets import build_track_features, build_triplets, save_processed
+    """Parse MSD Taste Profile + metadata → canonical processed parquets."""
+    from music_discovery.data.interactions import build
 
     cfg = _load_config(config)
-    data_cfg = cfg.get("data", {})
-    feat_cfg = cfg.get("features", {})
+    d = cfg.get("data", {})
 
-    kaggle_path = data_cfg.get("kaggle_csv", "data/raw/spotify_tracks.csv")
-    lastfm_path = data_cfg.get("lastfm_tsv", "data/raw/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv")
-    out_dir = data_cfg.get("processed_dir", "data/processed")
-    gap = data_cfg.get("session_gap_minutes", 30)
-    min_sess = data_cfg.get("min_session_length", 2)
-
-    typer.echo("[process] Loading Kaggle tracks...")
-    kaggle_df = load_kaggle_tracks(kaggle_path)
-
-    typer.echo("[process] Engineering features...")
-    track_features_df = build_track_features(kaggle_df, feat_cfg)
-
-    typer.echo("[process] Loading Last.fm events...")
-    lastfm_df = load_lastfm_events(lastfm_path)
-
-    typer.echo("[process] Building triplets...")
-    miss_log = Path(out_dir) / "unmatched_events.parquet"
-    triplets_df, user_history_df = build_triplets(
-        lastfm_df, track_features_df,
-        gap_minutes=gap,
-        min_session_length=min_sess,
-        miss_log_path=miss_log,
+    build(
+        taste_profile_path=d.get("taste_profile", "data/raw/train_triplets.txt"),
+        track_metadata_db=d.get("track_metadata_db", "data/raw/track_metadata.db"),
+        sid_mismatches_path=d.get("sid_mismatches", "data/raw/sid_mismatches.txt"),
+        lastfm_tags_db=d.get("lastfm_tags_db", "data/raw/lastfm_tags.db"),
+        lastfm_similars_db=d.get("lastfm_similars_db", "data/raw/lastfm_similars.db"),
+        artist_similarity_db=d.get("artist_similarity_db", "data/raw/artist_similarity.db"),
+        processed_dir=d.get("processed_dir", "data/processed"),
+        min_play_count=d.get("min_play_count", 1),
+        sample_n_users=d.get("sample_n_users"),
+        holdout_k=d.get("holdout_k", 10),
+        skip_side_info=skip_side_info or d.get("skip_side_info", False),
     )
-
-    save_processed(track_features_df, triplets_df, user_history_df, out_dir)
-    typer.echo(f"[process] Done. Processed data saved to {out_dir}")
 
 
 # ---------------------------------------------------------------------------
-# profile
+# train  — ALS matrix factorization
+# ---------------------------------------------------------------------------
+
+@app.command()
+def train(
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    output_dir: str = typer.Option("models/embeddings"),
+    config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
+):
+    """Train ALS model on Taste Profile interactions → song + user embeddings."""
+    from music_discovery.train.train_als import train_als
+
+    cfg = _load_config(config)
+    als_cfg = cfg.get("als", {})
+
+    typer.echo("[train] Training ALS model...")
+    train_als(
+        interactions_path=interactions,
+        output_dir=output_dir,
+        factors=als_cfg.get("factors", 128),
+        iterations=als_cfg.get("iterations", 20),
+        regularization=als_cfg.get("regularization", 0.01),
+        use_gpu=als_cfg.get("use_gpu", False),
+    )
+    typer.echo(f"[train] Done. Embeddings saved to {output_dir}")
+
+
+# ---------------------------------------------------------------------------
+# profile  — fit GMM personas per user
 # ---------------------------------------------------------------------------
 
 @app.command()
 def profile(
-    user_history: str = typer.Option(..., help="Path to user_history.parquet"),
-    track_embeddings: str = typer.Option(..., help="Path to track_embeddings.parquet"),
-    output_dir: str = typer.Option("models/personas", help="Directory to save persona models"),
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
+    output_dir: str = typer.Option("models/personas"),
     config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
 ):
-    """Fit Gaussian persona models for all users."""
+    """Fit Gaussian persona models for all users over ALS song embeddings."""
     from music_discovery.train.fit_personas import fit_all_personas
 
     cfg = _load_config(config)
@@ -132,8 +102,8 @@ def profile(
 
     typer.echo("[profile] Fitting user personas...")
     fit_all_personas(
-        user_history_path=user_history,
-        track_embeddings_path=track_embeddings,
+        user_history_path=interactions,
+        track_embeddings_path=song_embeddings,
         output_dir=output_dir,
         k_min=gmm_cfg.get("k_min", 2),
         k_max=gmm_cfg.get("k_max", 10),
@@ -148,12 +118,13 @@ def profile(
 
 @app.command()
 def recommend(
-    user_model: str = typer.Option(..., help="Directory containing persona.pkl"),
-    candidate_pool: str = typer.Option(..., help="Path to track_embeddings.parquet"),
-    user_history: str = typer.Option(..., help="Path to user_history.parquet"),
     user_id: str = typer.Option(..., help="User ID to generate recommendations for"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
+    songs: str = typer.Option("data/processed/songs.parquet"),
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    personas_dir: str = typer.Option("models/personas"),
     n: int = typer.Option(20, help="Number of recommendations"),
-    output: str = typer.Option("recommendations.json", help="Output JSON path"),
+    output: str = typer.Option("recommendations.json"),
     config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
 ):
     """Generate top-N recommendations for a user."""
@@ -166,30 +137,35 @@ def recommend(
     default_w = np.array(scoring_cfg.get("default_weights", DEFAULT_WEIGHTS.tolist()))
 
     typer.echo(f"[recommend] Loading persona for {user_id}...")
-    persona = load_persona(user_model)
+    persona = load_persona(str(Path(personas_dir) / user_id))
 
-    emb_df = pd.read_parquet(candidate_pool)
+    emb_df = pd.read_parquet(song_embeddings)
+    songs_df = pd.read_parquet(songs)
     emb_cols = [c for c in emb_df.columns if c.startswith("emb_")]
     candidate_emb = emb_df[emb_cols].to_numpy(dtype=np.float32)
-    candidate_artists = emb_df["artist_norm"].to_numpy()
 
-    history_df = pd.read_parquet(user_history)
-    user_train = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "train")]
-    history_indices = user_train["track_idx"].to_numpy()
-    valid_idx = history_indices[history_indices < len(candidate_emb)]
-    user_history_emb = candidate_emb[valid_idx]
-    user_history_artists = candidate_artists[valid_idx]
+    # artist names aligned to embedding rows via song_id
+    merged = emb_df[["song_id"]].merge(songs_df[["song_id", "artist_name"]], on="song_id", how="left")
+    candidate_artists = merged["artist_name"].fillna("").to_numpy()
 
-    # Try to optimise weights on discovery eval rows (fallback to defaults)
-    eval_rows = history_df[(history_df["user_id"] == user_id) & (history_df["split"] == "eval")]
-    if "is_discovery" in eval_rows.columns:
-        eval_rows = eval_rows[eval_rows["is_discovery"]]
-    held_out_raw = eval_rows["track_idx"].to_numpy()
-    held_out = np.unique(held_out_raw[(held_out_raw >= 0) & (held_out_raw < len(candidate_emb))])
+    idf = pd.read_parquet(interactions)
+    user_train = idf[(idf["user_id"] == user_id) & (idf["split"] == "train")]
+    song_to_idx = {sid: i for i, sid in enumerate(emb_df["song_id"])}
+    history_indices = np.array(
+        [song_to_idx[s] for s in user_train["song_id"] if s in song_to_idx], dtype=np.intp
+    )
+    user_history_emb = candidate_emb[history_indices]
+    user_history_artists = candidate_artists[history_indices]
+
+    user_val = idf[(idf["user_id"] == user_id) & (idf["split"] == "val")]
+    held_out = np.array(
+        [song_to_idx[s] for s in user_val["song_id"] if s in song_to_idx], dtype=np.intp
+    )
+
     weights = optimize_weights(
         candidate_emb, candidate_artists, persona,
         user_history_emb, user_history_artists, held_out,
-    )
+    ) if len(held_out) else default_w
 
     typer.echo(f"[recommend] Running diverse pipeline (weights={np.round(weights, 3)})...")
     top_n_indices = recommend_diverse(
@@ -198,7 +174,7 @@ def recommend(
         candidate_artists=candidate_artists,
         history_emb=user_history_emb,
         history_artists=user_history_artists,
-        history_indices=valid_idx,
+        history_indices=history_indices,
         n_recs=n,
         weights=weights,
         tau=rec_cfg.get("persona_temp", 0.7),
@@ -211,56 +187,18 @@ def recommend(
 
     results = []
     for rank, idx in enumerate(top_n_indices, 1):
-        results.append({
-            "rank": rank,
-            "artist": emb_df["artist_norm"].iloc[idx],
-            "track": emb_df["track_norm"].iloc[idx],
-        })
+        row = merged.iloc[idx]
+        results.append({"rank": rank, "song_id": emb_df["song_id"].iloc[idx], "artist": row["artist_name"]})
 
     Path(output).parent.mkdir(parents=True, exist_ok=True)
     with open(output, "w") as f:
         json.dump({"user_id": user_id, "recommendations": results}, f, indent=2)
 
-    typer.echo(f"[recommend] Top {n} recommendations saved to {output}")
+    typer.echo(f"[recommend] Top {n} saved to {output}")
     for r in results[:5]:
-        typer.echo(f"  #{r['rank']:2d}  {r['artist']} — {r['track']}")
+        typer.echo(f"  #{r['rank']:2d}  {r['artist']} — {r['song_id']}")
 
 
-
-# ---------------------------------------------------------------------------
-# Analyze-coverage
-# ---------------------------------------------------------------------------
-@app.command("analyze-coverage")
-def analyze_coverage(
-    config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
-    processed_dir: str = typer.Option("data/processed", help="Directory with processed parquet files"),
-    output: str = typer.Option("data/processed/coverage_report.json", help="Output path for coverage report"),
-    near_miss_threshold: int = typer.Option(70, help="Minimum fuzzy score to consider a near-miss")
-):
-    """ Analyze unmmatched events and surface candidate normalization rules"""
-    from music_discovery.data.kaggle_spotify import load_kaggle_tracks
-    from music_discovery.data.coverage_analysis import analyze_coverage as run_analysis
-    
-    cfg = _load_config(config)
-    data_cfg = cfg.get("data", {})
-    kaggle_path = data_cfg.get("kaggle_csv", "data/raw/spotify_tracks.csv")
-    unmatched_path = Path(processed_dir) / "unmatched_events.parquet"
-    
-    if not unmatched_path.exists():
-        typer.echo(f"[coverage] No unmatched_events.parquet found at {unmatched_path}. Run 'process' first")
-        raise typer.Exit(1)
-    
-    typer.echo("[coverage] Loading Kaggle catalog...")
-    catalog_df = load_kaggle_tracks(kaggle_path)
-    
-    typer.echo("[coverage] Analyzing unmatched events...")
-    run_analysis(
-        unmatched_events_path=unmatched_path,
-        catalog_df=catalog_df,
-        output_path=output,
-        near_miss_threshold=near_miss_threshold,
-    )
-    
 # ---------------------------------------------------------------------------
 # evaluate (sub-commands)
 # ---------------------------------------------------------------------------
@@ -269,86 +207,57 @@ evaluate_app = typer.Typer(help="Run evaluation experiments.")
 app.add_typer(evaluate_app, name="evaluate")
 
 
+@evaluate_app.command("holdout")
+def evaluate_holdout(
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
+    personas_dir: str = typer.Option("models/personas"),
+    output_dir: str = typer.Option("results/holdout"),
+    k: int = typer.Option(10, help="Cut-off for @K metrics"),
+    n_users: int = typer.Option(0, help="Limit evaluation to N users (0 = all)"),
+):
+    """Leave-k-out holdout evaluation: Recall/NDCG/HitRate + diversity metrics."""
+    from music_discovery.evaluate.holdout_eval import run as run_holdout
+    run_holdout(interactions, song_embeddings, personas_dir, output_dir, k, n_users or None)
+
+
 @evaluate_app.command("weight-sensitivity")
 def evaluate_weight_sensitivity(
-    processed_dir: str = typer.Option("data/processed", help="Directory with processed parquet files"),
-    embeddings_path: str = typer.Option("models/embeddings/track_embeddings.parquet"),
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
     personas_dir: str = typer.Option("models/personas"),
     output_dir: str = typer.Option("results/exp1"),
     n_users: int = typer.Option(10),
 ):
     """Experiment 1: scoring weight sensitivity (NDCG heatmap + ablation)."""
     from music_discovery.evaluate.weight_sensitivity import run as run_exp1
-    run_exp1(processed_dir, embeddings_path, personas_dir, output_dir, n_users)
+    run_exp1(interactions, song_embeddings, personas_dir, output_dir, n_users)
 
 
 @evaluate_app.command("persona-validation")
 def evaluate_persona_validation(
-    processed_dir: str = typer.Option("data/processed"),
-    embeddings_path: str = typer.Option("models/embeddings/track_embeddings.parquet"),
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
     personas_dir: str = typer.Option("models/personas"),
     output_dir: str = typer.Option("results/exp2"),
     n_users: int = typer.Option(10),
 ):
     """Experiment 2: BIC persona count validation (K vs NDCG + UMAP)."""
     from music_discovery.evaluate.persona_validation import run as run_exp2
-    run_exp2(processed_dir, embeddings_path, personas_dir, output_dir, n_users)
+    run_exp2(interactions, song_embeddings, personas_dir, output_dir, n_users)
 
 
 @evaluate_app.command("popularity-bias")
 def evaluate_popularity_bias(
-    processed_dir: str = typer.Option("data/processed"),
-    embeddings_path: str = typer.Option("models/embeddings/track_embeddings.parquet"),
+    interactions: str = typer.Option("data/processed/interactions.parquet"),
+    song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
     personas_dir: str = typer.Option("models/personas"),
     output_dir: str = typer.Option("results/exp3"),
     n_users: int = typer.Option(10),
 ):
     """Experiment 3: popularity bias comparison vs baseline."""
-    from music_discovery.evaluate.spotify_overlap import run as run_exp3
-    run_exp3(processed_dir, embeddings_path, personas_dir, output_dir, n_users)
-
-
-@evaluate_app.command("recommendation-quality")
-def evaluate_recommendation_quality(
-    processed_dir: str = typer.Option("data/processed"),
-    embeddings_path: str = typer.Option("models/embeddings/track_embeddings.parquet"),
-    personas_dir: str = typer.Option("models/personas"),
-    output_dir: str = typer.Option("results/rec_quality"),
-    n_users: int = typer.Option(20),
-    k: int = typer.Option(10, help="Cut-off for @K metrics"),
-):
-    """Recommendation quality: Replay@K, Discovery@K, NDCG@K, artist repetition, persona coverage."""
-    from music_discovery.evaluate.recommendation_quality import run as run_rq
-    run_rq(processed_dir, embeddings_path, personas_dir, output_dir, n_users, k)
-
-
-@evaluate_app.command("matching-quality")
-def evaluate_matching_quality(
-    kaggle_csv: str = typer.Option("data/raw/spotify_tracks.csv"),
-    lastfm_tsv: str = typer.Option("data/raw/lastfm-dataset-1K/userid-timestamp-artid-artname-traid-traname.tsv"),
-    benchmark_csv: str = typer.Option("data/eval/matching_benchmark.csv"),
-    output_dir: str = typer.Option("results/matching_quality"),
-    n_records: int = typer.Option(200, help="Benchmark size; must be between 100 and 300."),
-    seed: int = typer.Option(42),
-    predictions_csv: Optional[str] = typer.Option(
-        None,
-        help="Optional CSV with benchmark_id,predicted_track_idx|predicted_artist_norm,predicted_track_norm,score,accepted",
-    ),
-    regenerate: bool = typer.Option(False, help="Rebuild the benchmark CSV before scoring."),
-):
-    """Generate/score a 100-300 row benchmark for matching Last.fm queries to Spotify tracks."""
-    from music_discovery.evaluate.matching_quality import run as run_mq
-
-    run_mq(
-        kaggle_csv=kaggle_csv,
-        lastfm_tsv=lastfm_tsv,
-        benchmark_csv=benchmark_csv,
-        output_dir=output_dir,
-        n_records=n_records,
-        seed=seed,
-        predictions_csv=predictions_csv,
-        regenerate=regenerate,
-    )
+    from music_discovery.evaluate.recommendation_quality import run as run_exp3
+    run_exp3(interactions, song_embeddings, personas_dir, output_dir, n_users)
 
 
 if __name__ == "__main__":

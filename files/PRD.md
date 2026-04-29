@@ -1,15 +1,15 @@
 # Product Requirements Document — Music Discovery Engine
 
 **Type:** Academic / Research  
-**Stack:** Python · PyTorch · scikit-learn  
+**Stack:** Python · implicit · scikit-learn  
 **Deliverable:** Python package (`music_discovery`) + CLI  
-**Date:** 2026-04-27 (updated: data remediation pass)
+**Date:** 2026-04-29 (MSD pivot)
 
 ---
 
 ## 1. Problem Statement
 
-Mainstream platforms (Spotify, Apple Music) optimize for engagement via popularity signals, creating feedback loops that over-serve trending content. Users with diverse, non-mainstream taste receive recommendations that overfit to recently-played genres, ignoring the full breadth of their musical identity. This project builds a discovery engine that removes popularity from ranking entirely and models each user's taste as multiple simultaneous personas.
+Mainstream platforms (Spotify, Apple Music) optimize for engagement via popularity signals, creating feedback loops that over-serve trending content. Users with diverse, non-mainstream taste receive recommendations that overfit to recently-played genres, ignoring the full breadth of their musical identity. This project builds a discovery engine that learns from large-scale implicit listening behavior, models each user's taste as multiple simultaneous personas, and ranks candidates by fit + novelty + diversity — with no popularity signal in the ranking function.
 
 ---
 
@@ -17,247 +17,215 @@ Mainstream platforms (Spotify, Apple Music) optimize for engagement via populari
 
 | # | Goal |
 |---|------|
-| G1 | Train a metric learning model that embeds songs into a space where playlist co-occurrence = musical similarity |
-| G2 | Model each user as K Gaussian personas (BIC-selected), capturing multi-genre taste |
-| G3 | Score candidate songs by sonic fit, emotional fit, and novelty — zero popularity weight |
-| G4 | Learn optimal scoring weights per user via optimization |
-| G5 | Expose everything through a clean Python package + CLI |
-| G6 | Run three reproducible experiments validating each methodological claim |
+| G1 | Learn robust song and user representations from large-scale implicit listening feedback (MSD Taste Profile) |
+| G2 | Model each user as K Gaussian personas (BIC-selected) over learned item embeddings |
+| G3 | Rank candidates by fit + novelty + diversity — zero popularity weight in the scoring function |
+| G4 | Incorporate side information from Last.fm tags, track similarity, and artist similarity graphs |
+| G5 | Ship as a clean Python package + CLI |
+| G6 | Run reproducible offline evaluations against strong baselines (popularity, item-item, ALS) |
 
 ## 3. Non-Goals
 
 - Real-time serving / production latency requirements
 - Web UI or mobile interface
-- Collaborative filtering or social features
-- Audio signal processing (no raw audio, features-only)
-- Streaming history ingestion from live Spotify OAuth
+- Timestamp / session modeling (Taste Profile has no timestamps; not a requirement)
+- Raw audio signal processing (no waveforms; interaction-learned embeddings only)
+- Live API dependence (no Spotify OAuth, no live Last.fm calls)
+- Streaming history ingestion from live APIs
 
 ---
 
 ## 4. Data Strategy
 
-### 4.1 Critical Context: Spotify API Deprecation
+### 4.1 Core Dataset: MSD Taste Profile
 
-> **Warning:** Spotify deprecated the `/audio-features` endpoint for all new developer apps on **November 27, 2024** with no migration path. New apps cannot access audio features via the live API. The Spotify Million Playlist Dataset (MPD) also requires direct approval from Spotify Research and is not reliably accessible.
+**Primary source:** Million Song Dataset Taste Profile subset  
+**File:** `data/raw/train_triplets.txt`  
+**Format:** tab-separated `(user_id, song_id, play_count)`, ~48M rows, 2.9 GB  
+**Content:** Implicit listening behavior — how many times each user played each song
 
-This project uses two fully public, pre-computed datasets instead.
+This is the interaction signal. ALS learns user and song embeddings directly from these counts, weighted by `log1p(play_count)`.
 
-### 4.2 Chosen Data Sources
+**Scale config:** `data.sample_n_users` (null = full dataset) and `data.min_play_count` allow dev-time subsampling without code changes.
 
-| Dataset | Purpose | Access | Size |
-|---------|---------|--------|------|
-| **Kaggle Spotify Tracks Dataset** | All 9 audio features pre-computed as CSV | Kaggle API (free account) | ~50 MB |
-| **Last.fm 1K Users Dataset** | User listening history → session-based triplet construction | [zenodo.org/records/6090214](https://zenodo.org/records/6090214) | ~1 GB TSV |
+### 4.2 Item Bridge: track_metadata.db
 
-**Why this combination:**
-- Kaggle dataset contains the exact Spotify feature set (danceability, energy, valence, etc.) for ~114K tracks — zero HDF5 parsing, immediate use
-- Last.fm 1K has 19M timestamped play events across 992 users — timestamps enable session segmentation without needing explicit playlists
-- Last.fm is the official companion dataset to MSD; artist+track name join is well-documented
+**File:** `data/raw/track_metadata.db` (SQLite)  
+**Purpose:** Map `song_id` (Taste Profile key) → `track_id`, `artist_name`, `title`  
+**Critical:** This is the join layer between Taste Profile song IDs and all other MSD assets.
 
-### 4.3 Triplet Construction from Last.fm Sessions
+### 4.3 Data Quality Filter: sid_mismatches.txt
 
-No explicit playlists required. Sessions are inferred from timestamps:
+**File:** `data/raw/sid_mismatches.txt`  
+**Purpose:** Set of `song_id` values with known bad mappings in the Taste Profile  
+**Applied:** Before any join — mismatched song IDs are excluded from interactions and songs tables
 
-```
-session boundary = gap > 30 minutes between consecutive plays
+### 4.4 Side Information
 
-For each user session:
-  anchor   = track A (played at time t)
-  positive = track B (played in same session, t' ≠ t)
-  negative = track C sampled from in-distribution pool (see §4.3.1)
-```
+| File | Key | Content |
+|------|-----|---------|
+| `lastfm_tags.db` | `track_id` | User-assigned semantic tags per track |
+| `lastfm_similars.db` | `track_id` | Track similarity scores |
+| `artist_similarity.db` | `artist_id` | Artist similarity graph |
+| `msd_summary_file.h5` | `song_id` | Optional metadata (loudness, tempo, key, etc.) |
 
-Triplets are only formed for tracks that exist in the Kaggle features dataset (join on `artist_norm + track_norm` after expanded normalization — see §4.3.2).
+**ID join note:** `lastfm_tags.db` and `lastfm_similars.db` are keyed by `track_id`, not `song_id`. The `track_metadata.db` bridge (song_id → track_id) must be applied before joining side info. Join coverage is validated after mismatch filtering — log warning if < 50% of songs have tags or similars.
 
-#### 4.3.1 In-Distribution Negative Sampling
-
-Negatives are sampled from the **in-distribution pool** — the set of all tracks that appear in at least one user's listening history — excluding the current user's own training tracks. This ensures the model learns to distinguish genuine preferences from plausible alternatives, not heard behavior from random catalog entries.
-
-- If a user's pool drops below 10 candidates, that user is skipped with a warning (edge case for very active listeners who have heard most of the catalog).
-- Trivial triplets where `anchor_idx == pos_idx` are filtered out post-construction.
-- Duplicate `(user, anchor, pos)` triplets are deduplicated.
-
-#### 4.3.2 Name Normalization
-
-Both Last.fm and Kaggle names go through expanded normalization before the join:
-1. Lowercase + strip whitespace
-2. Strip parenthetical suffixes: `(Remastered)`, `(feat. X)`, `(Radio Edit)`, etc.
-3. Strip `feat.` / `ft.` artist credits from track names
-4. Collapse repeated whitespace
-
-This replaces the original `lower().strip()` only approach.
-
-#### 4.3.3 Eval Discovery Tagging
-
-`user_history.parquet` gains an `is_discovery` boolean column on eval rows. `is_discovery=True` when the eval track was **not** seen in that user's train history. Evaluation scripts should filter to `is_discovery=True` rows to measure true discovery rather than repeat-play recovery.
-
-### 4.4 Data Pipeline Architecture
+### 4.5 Data Pipeline Architecture
 
 ```
-[Kaggle Spotify CSV]             [Last.fm 1K TSV]
-        |                               |
-        v                               v
-[kaggle_spotify.py]            [lastfm.py]
- Load + validate 9 features     Parse events, segment sessions
- Expanded normalization          Expanded normalization
- Mean-aggregate duplicate keys
-        |                               |
-        v                               v
-[features.py]                  [triplets.py]
- Engineer 1 interaction         Join to Kaggle features
- feature → 10D vector           Build in-distribution triplets
-                                 Filter trivials + dedup
-                                 Tag is_discovery on eval rows
-        |                               |
-        +---------------+---------------+
+[train_triplets.txt]          [track_metadata.db]   [sid_mismatches.txt]
+         |                           |                       |
+         v                           v                       v
+[taste_profile.py]            [item_bridge.py]  ←  filter bad song_ids
+ Parse (user, song, count)     song_id → track_id,
+ log1p weight                  artist_name, title
+ sample_n_users / min_plays
+         |                           |
+         +───────────────────────────+
+                        |
                         v
-              [track_features.parquet]   ← 10D feature vectors per track
-              [triplets.parquet]         ← triplet index file (clean)
-              [user_history.parquet]     ← per-user track list + is_discovery
+              [interactions.py]
+               merge + random holdout split (holdout_k per user)
+                        |
+         ┌──────────────┼──────────────┐
+         v              v              v
+interactions.parquet  songs.parquet  (side info via side_info.py)
+                                     song_tags.parquet
+                                     song_similars.parquet
 ```
 
-#### 4.5.1 Catalog Deduplication
+### 4.6 Train/Val/Test Split
 
-When multiple Kaggle rows share the same `(artist_norm, track_norm)` key, audio features are **mean-aggregated** across the group. Display strings (`artists`, `track_name`) are taken from the first occurrence. This replaces the original `keep='first'` strategy that arbitrarily chose one conflicting feature vector.
+Taste Profile has no timestamps, so temporal ordering is meaningless.
 
-### 4.5 Audio Feature Reference
-
-All 9 base features sourced directly from Kaggle CSV (no derivation needed):
-
-| Feature | Type | Range |
-|---------|------|-------|
-| `danceability` | float | [0, 1] |
-| `energy` | float | [0, 1] |
-| `loudness` | float | [-60, 0] dB → normalized |
-| `speechiness` | float | [0, 1] |
-| `acousticness` | float | [0, 1] |
-| `instrumentalness` | float | [0, 1] |
-| `liveness` | float | [0, 1] |
-| `valence` | float | [0, 1] |
-| `tempo` | float | [40, 220] BPM → normalized |
+**Strategy:** Per-user random holdout  
+- Sample `holdout_k` (default 10) interactions per user → **val**  
+- Sample another `holdout_k` interactions per user → **test**  
+- Remainder → **train**  
+- Stored in `interactions.parquet` as a `split` column: `"train"` / `"val"` / `"test"`
 
 ---
 
-## 5. Feature Engineering
+## 5. Representation Strategy
 
-### 5.1 Base Vector (9D)
+### 5.1 Primary: Implicit-Feedback Learned Embeddings
 
-`[danceability, energy, loudness_norm, acousticness, instrumentalness, liveness, valence, tempo_norm, speechiness]`
+**Model:** `implicit.als.AlternatingLeastSquares`  
+**Input:** Sparse user×song matrix with `log1p(play_count)` weights  
+**Output:** `factors`-dimensional embedding vectors for every song and user  
 
-- `loudness_norm`: min-max scale from [-60, 0] dB → [0, 1]
-- `tempo_norm`: min-max scale from [40, 220] BPM → [0, 1]
+This replaces the MLP + triplet loss approach. ALS is the correct native fit for implicit count data at MSD scale.
 
-### 5.2 Engineered Interaction Features (1D)
+### 5.2 Optional: Side-Information Enrichment (Phase 4)
 
-One circumplex feature is retained, grounded in **Russell's Valence-Arousal Circumplex Model**:
+| Source | Use |
+|--------|-----|
+| Last.fm tags | TF-IDF weighted tag features for semantic enrichment of songs |
+| Track similarity | Item-item fallback and cold-start-ish reranking |
+| Artist similarity | Exploration smoothing across similar artists |
 
-| Feature | Formula | Captures |
-|---------|---------|---------|
-| `arousal` | `(energy + danceability) / 2` | How activating/energizing the music feels |
-
-Two previously included features (`chill_factor`, `vocal_presence`) were dropped because they are deterministic recombinations of base features already present in the vector, with pairwise correlations ≥ 0.85. Retaining them overweighted the dimensions they recombine without adding independent signal.
-
-**Why not user-relative features:** Raw features feed a *shared* embedding space trained across all users. User-specificity enters at the GMM layer — persona centroids naturally sit in the region of embedding space where the user actually listens.
-
-**Final input vector: 10D** = [9 base + 1 engineered], L2-normalized before model input.
+Side info supplements learned embeddings — it does not replace them.
 
 ---
 
 ## 6. System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
-│                    music_discovery                       │
-│                                                         │
-│  ┌──────────┐   ┌──────────┐   ┌──────────────────────┐│
-│  │  data/   │   │ models/  │   │     cli/             ││
-│  │          │   │          │   │                      ││
-│  │kaggle.py │   │ mlp.py   │   │ recommend  train     ││
-│  │lastfm.py │   │ gmm.py   │   │ profile    evaluate  ││
-│  │ features │   │ scorer.py│   │                      ││
-│  └──────────┘   └──────────┘   └──────────────────────┘│
-└─────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                     music_discovery                          │
+│                                                             │
+│  ┌──────────────┐   ┌──────────────┐   ┌─────────────────┐ │
+│  │    data/     │   │   models/    │   │     cli/        │ │
+│  │              │   │              │   │                 │ │
+│  │taste_profile │   │  gmm.py      │   │ recommend train │ │
+│  │item_bridge   │   │  scorer.py   │   │ profile evaluate│ │
+│  │side_info     │   │              │   │                 │ │
+│  │interactions  │   │              │   │                 │ │
+│  └──────────────┘   └──────────────┘   └─────────────────┘ │
+│                                                             │
+│  ┌──────────────┐   ┌──────────────────────────────────┐   │
+│  │   train/     │   │         evaluate/                │   │
+│  │              │   │                                  │   │
+│  │ train_als    │   │ holdout_eval  weight_sensitivity  │   │
+│  │ fit_personas │   │ persona_validation               │   │
+│  └──────────────┘   └──────────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────┘
+```
+
+**Pipeline stages:**
+```
+ingest + clean interactions
+        ↓
+build item metadata bridge
+        ↓
+split train / val / test (random holdout per user)
+        ↓
+train ALS baseline → song_embeddings + user_embeddings
+        ↓
+fit GMM personas over consumed song embeddings per user
+        ↓
+rerank with novelty / diversity / side info
+        ↓
+evaluate vs. baselines (popularity, item-item, ALS)
 ```
 
 ---
 
 ## 7. Component Specifications
 
-### 7.1 Metric Learning MLP
+### 7.1 ALS Recommender (Primary Model)
 
-**Goal:** Map 10D audio features → 24D L2-normalized embedding space where playlist co-occurrence ≈ proximity.
+**Library:** `implicit.als.AlternatingLeastSquares`  
+**Input:** Sparse user×song CSR matrix, values = `log1p(play_count)`  
+**Output:** `factors`-dim embeddings for all users and songs
 
-**Architecture:**
+**Training config:**
+```yaml
+als:
+  factors: 128
+  iterations: 20
+  regularization: 0.01
+  use_gpu: false
 ```
-Input(10) → Linear(10→64) → BatchNorm → ReLU
-          → Linear(64→48) → BatchNorm → ReLU  → Dropout(0.2)
-          → Linear(48→24) → L2Normalize
-```
 
-**Training:**
-- Loss: `TripletMarginLoss(margin=0.3, p=2)`
-- Triplet mining: semi-hard negatives (online, within-batch)
-  - Anchor: song A from user session S
-  - Positive: song B from same session S (within 30-min window)
-  - Negative: song C from in-distribution pool (tracks seen in any user history), excluding the current user's train tracks
-- Train/val split: **user-level** — 15% of users held out entirely for validation (zero user overlap between train and val loss)
-- Optimizer: Adam, lr=1e-3, weight decay=2e-3
-- Scheduler: CosineAnnealingLR
-- Batch size: 512 triplets
-- Epochs: 50 (early stopping patience=10 on validation triplet loss)
-
-**Hyperparameters to tune:**
-- Margin: {0.2, 0.3, 0.5}
-- Hidden dims: {[64,48], [128,64], [256,128]}
-- Dropout: {0.1, 0.2, 0.3}
+**Popularity baseline:** Sort songs by `sum(play_count)` over training interactions. Used as the weakest baseline to beat.
 
 ### 7.2 Gaussian Mixture Model (User Personas)
 
-**Goal:** Represent each user's taste as K soft-assignment Gaussian clusters (personas) in embedding space.
+**Goal:** Represent each user's taste as K soft-assignment Gaussian clusters in ALS embedding space.
 
 **Process:**
-1. Collect user's song embeddings (24D) from their listening history — **deduplicated to unique tracks** to avoid replay loops inflating head behavior
+1. Collect user's song embeddings from `song_embeddings.parquet`, indexed by the songs they played in train split — **deduplicated to unique songs**
 2. Fit GMM with K components, full covariance
 3. Select K via **BIC** — range K ∈ [2, 10], pick argmin(BIC)
 4. Each persona k = (mean μ_k, covariance Σ_k, weight π_k)
 
-**Implementation:** `sklearn.mixture.GaussianMixture`
-
+**Implementation:** `sklearn.mixture.GaussianMixture` (unchanged from prior version)  
 **Minimum songs per user:** 20 (below this: single Gaussian fallback)
-
-**Outputs per user:**
-- K personas with parameters
-- Soft assignment probability per song per persona
-- Dominant persona per song (argmax posterior)
 
 ### 7.3 Scoring Function
 
-**Goal:** Rank candidate songs for a user given seed context.
+**Goal:** Rank candidate songs for a user beyond raw ALS score, emphasizing novelty and diversity.
 
 **Score formula:**
 ```
 score(song, user) = w₁ · sonic_fit(song, user)
-                  + w₂ · emotional_fit(song, user)
-                  + w₃ · surprise(song, user)
+                  + w₂ · novelty(song, user)
+                  + w₃ · emotional_fit(song, user)
+                  + w₄ · familiarity(song, user)
 
-where w₁ + w₂ + w₃ = 1
+where w₁ + w₂ + w₃ + w₄ = 1
 ```
-
-**Components:**
 
 | Component | Weight | Formula |
 |-----------|--------|---------|
-| `sonic_fit` | 0.45 (init) | Max cosine similarity between song embedding and each persona centroid |
-| `emotional_fit` | 0.35 (init) | Gaussian log-probability of song's valence under the closest persona's valence marginal |
-| `surprise` | 0.20 (init) | 0.5 × artist_novelty + 0.5 × embedding_distance_from_known |
+| `sonic_fit` | 0.45 | Max cosine similarity to any persona centroid |
+| `novelty` | 0.30 | 0.5 × artist_novelty + 0.5 × embedding distance from known songs |
+| `emotional_fit` | 0.15 | Tag-based proxy (Phase 4) or GMM log-prob fallback |
+| `familiarity` | 0.10 | GMM log-probability (Mahalanobis) |
 
-**artist_novelty:** 1 if artist not in user history, else 0  
-**embedding_distance_from_known:** min cosine distance from song to all songs in user history (normalized to [0,1])
-
-**Weight Learning:**
-- Optimize weights per user via `scipy.optimize.minimize` (L-BFGS-B with simplex constraint)
-- Objective: maximize intra-playlist ranking (songs from user's playlists ranked above random)
-- Fallback to default weights if user has < 50 songs in history
+**Diversity:** MMR reranking (`mmr_lambda=0.7`) + per-persona slot allocation + artist cap (max 2 per artist).
 
 ---
 
@@ -269,45 +237,37 @@ music-discovery-engine/
 │   ├── __init__.py
 │   ├── data/
 │   │   ├── __init__.py
-│   │   ├── kaggle_spotify.py   # Kaggle CSV loader + validation
-│   │   ├── lastfm.py           # Last.fm 1K TSV parser + session segmentation
-│   │   ├── triplets.py         # Triplet construction from Last.fm sessions
-│   │   └── features.py         # Feature engineering (12D vector builder)
+│   │   ├── taste_profile.py    # Parse train_triplets.txt, log1p weights, sampling
+│   │   ├── item_bridge.py      # SQLite join song_id → track_id, sid mismatch filter
+│   │   ├── side_info.py        # Tags/similars/artist DBs via track_id bridge
+│   │   └── interactions.py     # Orchestrate → canonical parquets + random holdout split
 │   ├── models/
 │   │   ├── __init__.py
-│   │   ├── mlp.py          # EmbeddingMLP (PyTorch nn.Module)
-│   │   ├── triplet.py      # Triplet dataset + semi-hard mining
-│   │   ├── gmm.py          # UserPersonaModel (sklearn GMM wrapper)
-│   │   └── scorer.py       # ScoringFunction + weight optimizer
+│   │   ├── gmm.py              # UserPersonaModel (sklearn GMM wrapper)
+│   │   └── scorer.py           # ScoringFunction + MMR + slot allocation
 │   ├── train/
 │   │   ├── __init__.py
-│   │   ├── train_embeddings.py   # MLP training loop
-│   │   └── fit_personas.py       # GMM fitting per user
+│   │   ├── train_als.py        # implicit ALS training + popularity baseline
+│   │   └── fit_personas.py     # GMM fitting per user on ALS song embeddings
 │   ├── evaluate/
 │   │   ├── __init__.py
-│   │   ├── weight_sensitivity.py # Experiment 1
-│   │   ├── persona_validation.py # Experiment 2
-│   │   └── spotify_overlap.py    # Experiment 3
+│   │   ├── holdout_eval.py     # Leave-k-out harness + all metrics
+│   │   ├── weight_sensitivity.py
+│   │   └── persona_validation.py
 │   └── cli/
 │       ├── __init__.py
-│       └── main.py         # Typer-based CLI
+│       └── main.py
+├── data/
+│   ├── raw/                    # train_triplets.txt, track_metadata.db, *.db, *.h5
+│   └── processed/              # interactions.parquet, songs.parquet, song_tags.parquet, ...
+├── models/
+│   ├── embeddings/             # song_embeddings.parquet, user_embeddings.parquet
+│   └── personas/               # per-user GMM artifacts
+├── results/                    # baseline_metrics.csv, experiment outputs
 ├── notebooks/
-│   ├── 01_data_exploration.ipynb
-│   ├── 02_feature_engineering.ipynb
-│   ├── 03_embedding_analysis.ipynb
-│   ├── 04_persona_exploration.ipynb
-│   └── 05_experiment_results.ipynb
-├── scripts/
-│   ├── download_kaggle.sh      # kaggle datasets download command
-│   └── download_lastfm.sh      # wget from Zenodo
-├── tests/
-│   ├── test_features.py
-│   ├── test_mlp.py
-│   ├── test_gmm.py
-│   └── test_scorer.py
 ├── configs/
-│   └── default.yaml        # All hyperparameters in one place
-├── pyproject.toml
+│   └── default.yaml
+├── tests/
 └── README.md
 ```
 
@@ -316,23 +276,25 @@ music-discovery-engine/
 ## 9. CLI Design
 
 ```bash
-# Train the embedding model
-music-discovery train --data ./data/processed --epochs 50 --config configs/default.yaml
+# Process raw MSD data → canonical parquets
+music-discovery process --config configs/default.yaml
 
-# Fit personas for a user
-music-discovery profile --user-history ./data/users/user_001.json --output ./models/user_001/
+# Train ALS baseline
+music-discovery train --config configs/default.yaml
 
-# Get recommendations
+# Fit personas for all users
+music-discovery profile --config configs/default.yaml
+
+# Get recommendations for a user
 music-discovery recommend \
-  --user-model ./models/user_001/ \
-  --candidate-pool ./data/processed/track_embeddings.parquet \
+  --user-id <user_id> \
   --n 20 \
-  --output recommendations.json
+  --config configs/default.yaml
 
 # Run experiments
-music-discovery evaluate weight-sensitivity --user-model ./models/user_001/
-music-discovery evaluate persona-validation --users ./data/users/
-music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./data/spotify_baseline/
+music-discovery evaluate holdout --config configs/default.yaml
+music-discovery evaluate weight-sensitivity --config configs/default.yaml
+music-discovery evaluate persona-validation --config configs/default.yaml
 ```
 
 ---
@@ -341,113 +303,87 @@ music-discovery evaluate spotify-overlap --users ./data/users/ --spotify-recs ./
 
 ### Experiment 1 — Scoring Weight Sensitivity
 
-**Question:** Does each scoring component (sonic, emotional, surprise) independently contribute, or does one dominate?
+**Question:** Does each scoring component (sonic_fit, novelty, emotional_fit) independently contribute?
 
 **Method:**
-- Fix a test user set (5–10 diverse users from Last.fm 1K, held-out final sessions)
 - Ablation: run scoring with each single component alone (w=1.0, others=0)
-- Grid sweep: w₁ ∈ [0,1], w₂ ∈ [0,1−w₁], w₃ = 1−w₁−w₂, step=0.05
-- Measure NDCG@10 at each weight combination
+- Grid sweep over weight combinations, measure NDCG@10
 
-**Graphs for report:**
-1. **Heatmap** — x=w_sonic, y=w_emotional (w_surprise=1−x−y), color=NDCG@10. Shows optimal weight region.
-2. **Grouped bar chart** — NDCG@10 for: sonic only / emotional only / surprise only / learned weights / default weights. Shows each component's independent contribution.
-
-**Expected finding:** Learned weights outperform any single component; no single component dominates.
+**Graphs:** heatmap (w_sonic vs w_novelty, color=NDCG@10) + grouped bar chart (single-component vs learned weights)
 
 ---
 
 ### Experiment 2 — Persona Count Validation
 
-**Question:** Does BIC-selected K produce better-personalized recommendations than fixed K?
+**Question:** Does BIC-selected K produce better-personalized, more diverse recommendations than fixed K?
 
 **Method:**
-- Classify 10 test users into 3 types by genre entropy: niche (low), diverse (high), mainstream (mid)
-- For each user: fit GMM at K ∈ {1, 2, 3, 4, 5} and BIC-selected K
-- Evaluate NDCG@10 and Hit Rate@20 on held-out listening sessions per K
+- Classify test users by catalog diversity (genre entropy or unique artist count)
+- Fit GMM at K ∈ {1,2,3,4,5} and BIC-selected K per user
+- Measure NDCG@10 and intra-list diversity per K
 
-**Graphs for report:**
-1. **Line chart** — x=K, y=NDCG@10, one line per user type (niche / diverse / mainstream). BIC-selected K marked with a star on each line.
-2. **BIC curve** — x=K, y=BIC score for 2–3 representative users. Shows the elbow that BIC selects.
-3. **UMAP scatter** — user's song embeddings in 2D with Gaussian ellipses overlaid for each persona. One plot per representative user.
-
-**Expected finding:** BIC-selected K matches or outperforms best fixed K; diverse users benefit most from K>2.
+**Graphs:** K vs NDCG line chart per user type + BIC curve for representative users + UMAP with persona ellipses
 
 ---
 
 ### Experiment 3 — Popularity Bias Comparison
 
-**Question:** Do our recommendations avoid mainstream content compared to a popularity-ranked baseline?
+**Question:** Do recommendations avoid mainstream content vs. a popularity baseline?
 
 **Method:**
-- Baseline: top-N tracks by total Last.fm play count (pure popularity ranking)
-- Our model: recommendations for same users and candidate pool
-- Measure per recommendation set:
-  - Popularity percentile (track's global play count rank, 0=obscure, 1=mainstream)
-  - Jaccard similarity between our recs and baseline recs
-  - KL divergence of each audio feature distribution (our recs vs. baseline) — computed in **10D feature space** (`track_features.parquet`, `FEATURE_VECTOR_COLS`) not in 24D embedding space. Embedding dims are latent and uninterpretable per-dimension; feature space gives human-readable divergence per audio attribute.
-  - Intra-list diversity: mean pairwise cosine distance in **24D embedding space** (captures overall sonic distance between recommended tracks)
+- Compare: popularity-ranked baseline vs. ALS baseline vs. persona reranker
+- Measure: popularity percentile of recommended songs, long-tail exposure, intra-list diversity
 
-**Implementation note:** KL divergence and intra-list diversity intentionally use different spaces. KL uses the 12D interpretable feature space for report readability. Diversity uses the 24D embedding space because that is the model's learned similarity metric.
-
-**Graphs for report:**
-1. **CDF plot** — x=popularity percentile, y=cumulative fraction of recommended tracks. Two curves: our model vs. popularity baseline. Our model's curve should shift left.
-2. **Feature KL divergence bar chart** — one bar per audio feature (12D feature space) showing how much our recs diverge from popularity baseline in each dimension.
-3. **Intra-list diversity box plot** — distribution of pairwise cosine distances in 24D embedding space for our recs vs. baseline across all test users.
-
-**Expected finding:** Our recommendations skew toward lower popularity percentile and show higher intra-list diversity.
+**Graphs:** CDF of popularity percentile (our model vs baselines) + ILD box plot
 
 ---
 
 ## 11. Evaluation Metrics
 
-### 11.1 Embedding Quality (MLP)
+### 11.1 Ranking Quality
 
-| Metric | Graph | What It Proves |
-|--------|-------|---------------|
-| Validation triplet loss vs. epoch | Line chart | Model converged, no overfitting |
-| Mean cosine sim: session-mates vs. random pairs (+ t-test, p<0.05) | Bar chart with error bars | Embedding space encodes musical similarity |
-| Silhouette score on full embedding set | Reported in table | Songs cluster by sonic similarity |
-| t-SNE / UMAP of embeddings colored by genre | 2D scatter plot | Visual proof of structure in embedding space |
+| Metric | K | What It Proves |
+|--------|---|---------------|
+| Recall@K | 10, 20 | Fraction of held-out songs recovered |
+| NDCG@K | 10, 20 | Ranking quality (position-weighted) |
+| HitRate@K | 10, 20 | Did at least one held-out song appear in top K |
+| MAP@K | 10 | Mean average precision |
 
-### 11.2 Persona Quality (GMM)
+### 11.2 Discovery & Diversity
 
-| Metric | Graph | What It Proves |
-|--------|-------|---------------|
-| BIC score vs. K per user | Line chart (2–3 users) | BIC selection is principled, not arbitrary |
-| Persona coverage (% songs with posterior p > 0.2) | Bar chart per user | Soft assignment captures multi-genre taste |
-| UMAP with Gaussian ellipses per persona | 2D scatter + ellipses | Personas are spatially coherent |
+| Metric | What It Measures |
+|--------|-----------------|
+| Catalog coverage | % of song catalog recommended at least once across all users |
+| Artist coverage | % unique artists across recommendations |
+| Intra-list diversity (ILD) | Mean pairwise cosine distance within a user's recommendation list |
+| Long-tail exposure | % recommended songs below 80th popularity percentile |
+| Novelty / popularity-bias | Mean popularity rank of recommended songs |
 
-### 11.3 Recommendation Quality
+### 11.3 Baselines
 
-| Metric | K | Graph | What It Proves |
-|--------|---|-------|---------------|
-| NDCG@K | 5, 10, 20 | Bar chart (component ablation) | Ranking quality vs. held-out sessions |
-| Hit Rate@K | 10, 20 | Bar chart | Absolute accuracy of top-N recs |
-| Mean Reciprocal Rank (MRR) | — | Reported in table | How high the first hit appears |
-| Intra-list diversity | — | Box plot across users | Recs are sonically varied |
-| Novelty (mean popularity percentile) | — | CDF comparison | Engine avoids mainstream bias |
+| Baseline | Description |
+|----------|-------------|
+| Popularity | Rank by total `play_count` across all training users |
+| Item-item | Cosine similarity in ALS song embedding space |
+| ALS (no reranker) | Raw ALS scores, no persona reranking |
+| ALS + persona reranker | Full pipeline — the target system |
 
-### 11.4 Ground Truth Construction
+### 11.4 Ground Truth
 
-Since no explicit ratings exist, held-out sessions from Last.fm 1K serve as implicit ground truth:
-- **80/20 temporal split per user**: first 80% of sessions → train GMM + optimize weights; last 20% → evaluation
-- Evaluation is filtered to **`is_discovery=True`** rows — eval tracks the user had not already heard in train. This measures true discovery, not repeat-play recovery.
-- A recommended track is a **hit** if it appears in the user's discovery eval set
-- NDCG uses binary relevance (1 = in discovery eval, 0 = not)
+Per-user random holdout: `holdout_k=10` interactions held out for val, another 10 for test. A recommended song is a **hit** if it appears in the user's holdout set. NDCG uses binary relevance (1 = in holdout, 0 = not).
 
 ---
 
 ## 12. Implementation Phases
 
-| Phase | Deliverable | Key Files |
-|-------|-------------|-----------|
-| **P1: Data** | Kaggle loader, Last.fm parser, session triplets, feature engineer | `data/kaggle_spotify.py`, `data/lastfm.py`, `data/triplets.py`, `data/features.py` |
-| **P2: Embeddings** | MLP + Triplet training loop, saved model | `models/mlp.py`, `models/triplet.py`, `train/train_embeddings.py` |
-| **P3: Personas** | GMM fit + BIC selection per user | `models/gmm.py`, `train/fit_personas.py` |
-| **P4: Scoring** | Scoring function + weight optimizer | `models/scorer.py` |
-| **P5: CLI** | All CLI commands working end-to-end | `cli/main.py` |
-| **P6: Experiments** | 3 experiment scripts + notebooks | `evaluate/`, `notebooks/` |
+| Phase | Goal | Key Deliverables |
+|-------|------|-----------------|
+| **P0: Docs** | Align documentation | Updated PRD, PROPOSAL, README |
+| **P1: Data** | Canonical parquets from MSD | interactions.parquet, songs.parquet, song_tags.parquet |
+| **P2: Baseline** | First trustworthy model | song_embeddings.parquet, baseline_metrics.csv |
+| **P3: Personas** | Differentiating layer | user persona artifacts, persona vs baseline ablation |
+| **P4: Side info** | Semantic enrichment | tag/similarity enriched reranker, ablation table |
+| **P5: Alignment** | Repo reflects reality | Final PRD, README, CLI docs |
 
 ---
 
@@ -456,18 +392,19 @@ Since no explicit ratings exist, held-out sessions from Last.fm 1K serve as impl
 ```toml
 [project]
 dependencies = [
-  "torch>=2.0",
-  "scikit-learn>=1.3",
+  "implicit>=0.7",      # ALS matrix factorization
+  "scikit-learn>=1.3",  # GMM
   "pandas>=2.0",
   "numpy>=1.24",
-  "pyarrow",          # parquet I/O
-  "typer",            # CLI
-  "pyyaml",           # configs
-  "scipy",            # weight optimization
-  "matplotlib",       # experiment plots
+  "scipy>=1.10",        # sparse matrices, weight optimization
+  "pyarrow",            # parquet I/O
+  "typer",              # CLI
+  "pyyaml",             # configs
+  "matplotlib",
   "seaborn",
-  "umap-learn",       # UMAP embeddings visualization
+  "umap-learn",
   "tqdm",
+  "h5py",               # msd_summary_file.h5
 ]
 ```
 
@@ -475,27 +412,25 @@ dependencies = [
 
 ## 14. Verification Checklist
 
-**Data pipeline:**
-- [ ] Match rate after expanded normalization > 20% of Last.fm events (logged by `process`)
-- [ ] Neg-from-seen-pool rate > 80% (logged by `process`)
-- [ ] Eval discovery rate > 80% (logged by `process`)
-- [ ] Zero trivial triplets: `(anchor_idx == pos_idx).sum() == 0`
+**Data pipeline (Phase 1):**
+- [ ] `python -m music_discovery.data.interactions` completes without error
+- [ ] `interactions.parquet` row count matches expected after `min_play_count` filter
+- [ ] `songs.parquet` excludes all song_ids from `sid_mismatches.txt`
+- [ ] `side_info.py` logs tag coverage ≥ 50% (or warns with count if not)
+- [ ] `side_info.py` logs similar-track coverage ≥ 50% (or warns)
 
-**Training:**
-- [ ] `music-discovery train` completes without error, val triplet loss decreasing
-- [ ] Val split uses held-out users (zero user overlap with train)
-- [ ] Embedding space: cosine similarity of session-mates > random pairs (t-test p<0.05)
+**ALS training (Phase 2):**
+- [ ] `python -m music_discovery.train.train_als` completes without error
+- [ ] `baseline_metrics.csv` shows ALS Recall@10 > popularity baseline Recall@10
+- [ ] Song embeddings shape: `(n_songs, factors)`
+- [ ] User embeddings shape: `(n_users, factors)`
 
-**Personas:**
-- [ ] GMM inputs are deduplicated (unique tracks only per user)
-- [ ] BIC selects K>1 for at least 70% of diverse users
-
-**Evaluation:**
-- [ ] NDCG computed only on `is_discovery=True` eval rows
-- [ ] Scoring function produces non-uniform rankings (not all scores equal)
-- [ ] Experiment 1 shows at least 1 component is non-redundant (ablation gap > 0.05 NDCG)
-- [ ] Experiment 3 Jaccard overlap < 0.3 (our recs differ meaningfully from popularity baseline)
+**Personas (Phase 3):**
+- [ ] GMM inputs use ALS song embeddings (not MLP), deduplicated per user
+- [ ] BIC selects K > 1 for ≥ 70% of diverse users
+- [ ] Persona reranker shows ILD improvement vs. raw ALS
 
 **General:**
 - [ ] All tests pass: `pytest tests/`
-- [ ] CLI commands work end-to-end: `music-discovery process → train → profile → evaluate`
+- [ ] CLI commands work end-to-end: `process → train → profile → recommend`
+- [ ] Experiment 3: our recs show lower mean popularity percentile than popularity baseline
