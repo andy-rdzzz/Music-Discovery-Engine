@@ -7,12 +7,28 @@ notes.txt
 # data & models
 data/raw/
 data/processed/
-models/
+models/personas
+models/personas_playcount
+models/embeddings/user_embeddings.parquet
+models/embeddings/song_embeddings.parquet
 *.parquet
 *.h5
 *.pt
 *.pth
-results
+
+# Results
+results/exp1_best/weight_sensitivity_results.csv
+results/holdout_top250/holdout_summary.csv
+results/holdout_top500/holdout_summary.csv
+results/holdout_top500/holdout_metrics.csv
+results/holdout_persona_blend/holdout_summary.csv
+results/holdout_top250/holdout_metrics.csv
+results/holdout_persona_blend/holdout_metrics.csv
+results/exp3_best/recommendation_quality.csv
+results/exp2_best/persona_validation_results.csv
+results/exp2_best/bic_curves.csv
+results/holdout_1000_top250/holdout_metrics.csv
+results/holdout_1000_top250/holdout_summary.csv
 
 # python
 __pycache__/
