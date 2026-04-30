@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import shutil
 from pathlib import Path
 from typing import Optional
 
@@ -9,6 +10,19 @@ import pandas as pd
 import typer
 
 app = typer.Typer(help="Music Discovery Engine — popularity-free recommendations.")
+
+
+def _remove_stale_personas(personas_dir: str, interactions_path: str) -> None:
+    current_users = set(pd.read_parquet(interactions_path, columns=["user_id"])["user_id"])
+    p = Path(personas_dir)
+    if not p.exists():
+        return
+    removed = 0
+    for d in p.iterdir():
+        if d.is_dir() and d.name not in current_users:
+            shutil.rmtree(d)
+            removed += 1
+    typer.echo(f"[profile] Removed {removed} stale persona dirs from {personas_dir}")
 
 
 def _load_config(config_path: str | None) -> dict:
@@ -96,12 +110,16 @@ def profile(
     resume: bool = typer.Option(True, help="Skip users that already have persona.pkl"),
     n_init: int = typer.Option(0, help="GMM random restarts per k (0 = use config)"),
     config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
+    clean_stale: bool = typer.Option(False, help="Remove persona dirs not in current interaction users before fitting"),
 ):
     """Fit Gaussian persona models for all users over ALS song embeddings."""
     from music_discovery.train.fit_personas import fit_all_personas
 
     cfg = _load_config(config)
     gmm_cfg = cfg.get("gmm", {})
+
+    if clean_stale:
+        _remove_stale_personas(output_dir, interactions)
 
     typer.echo("[profile] Fitting user personas...")
     fit_all_personas(
@@ -168,6 +186,22 @@ def recommend(
         [song_to_idx[s] for s in user_val["song_id"] if s in song_to_idx], dtype=np.intp
     )
 
+    # ALS relevance scores: dot product of candidate embeddings with user vector
+    als_scores = None
+    user_emb_path = str(Path(song_embeddings).parent / "user_embeddings.parquet")
+    if Path(user_emb_path).exists():
+        udf = pd.read_parquet(user_emb_path)
+        urow = udf[udf["user_id"] == user_id]
+        if not urow.empty:
+            emb_cols_u = [c for c in udf.columns if c.startswith("emb_")]
+            u_vec = urow[emb_cols_u].to_numpy(dtype=np.float32)[0]
+            als_scores = candidate_emb @ u_vec
+            typer.echo("[recommend] ALS relevance scores loaded.")
+        else:
+            typer.echo("[recommend] User not found in user_embeddings — skipping ALS shortlist.")
+    else:
+        typer.echo("[recommend] user_embeddings.parquet not found — skipping ALS shortlist.")
+
     weights = optimize_weights(
         candidate_emb, candidate_artists, persona,
         user_history_emb, user_history_artists, held_out,
@@ -189,6 +223,8 @@ def recommend(
         exploration_fraction=rec_cfg.get("exploration_fraction", 0.15),
         mmr_lambda=rec_cfg.get("mmr_lambda", 0.7),
         max_per_artist=rec_cfg.get("max_per_artist", 2),
+        relevance_scores=als_scores,
+        rerank_top_m=rec_cfg.get("rerank_top_m"),
     )
 
     results = []
@@ -222,10 +258,17 @@ def evaluate_holdout(
     k: int = typer.Option(10, help="Cut-off for @K metrics"),
     n_users: int = typer.Option(0, help="Limit evaluation to N users (0 = all)"),
     n_jobs: int = typer.Option(0, help="Parallel workers (0 = auto)"),
+    config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
 ):
     """Leave-k-out holdout evaluation: Recall/NDCG/HitRate + diversity metrics."""
     from music_discovery.evaluate.holdout_eval import run as run_holdout
-    run_holdout(interactions, song_embeddings, personas_dir, output_dir, k, n_users or None, n_jobs or None)
+    cfg = _load_config(config)
+    rec_cfg = cfg.get("recommend", {})
+    run_holdout(
+        interactions, song_embeddings, personas_dir, output_dir,
+        k, n_users or None, n_jobs or None,
+        rerank_top_m=rec_cfg.get("rerank_top_m"),
+    )
 
 
 @evaluate_app.command("weight-sensitivity")

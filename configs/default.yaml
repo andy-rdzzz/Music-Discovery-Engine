@@ -20,9 +20,9 @@ als:
 
 gmm:
   k_min: 2
-  k_max: 5
+  k_max: 8
   covariance_type: diag
-  n_init: 1
+  n_init: 3
   min_songs_per_user: 20     # fallback to single Gaussian below this
 
 scoring:
@@ -35,3 +35,4 @@ recommend:
   exploration_fraction: 0.15
   mmr_lambda: 0.7
   max_per_artist: 2
+  rerank_top_m: 500          # null = full catalog; persona layer only sees ALS top-M

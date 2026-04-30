@@ -1,4 +1,4 @@
-"""Tests for scoring function — sonic, emotional, surprise, full score, weight optimizer."""
+"""Tests for scorer components and weight optimization."""
 
 import numpy as np
 import pytest
@@ -6,8 +6,9 @@ import pytest
 from music_discovery.models.gmm import fit_user_persona
 from music_discovery.models.scorer import (
     sonic_fit,
-    emotional_fit,
-    surprise_score,
+    persona_specificity,
+    novelty_score,
+    familiarity_score,
     score_candidates,
     optimize_weights,
     DEFAULT_WEIGHTS,
@@ -55,26 +56,45 @@ def test_sonic_fit_identical_to_centroid_is_max():
 
 
 # ---------------------------------------------------------------------------
-# emotional_fit
+# persona_specificity
 # ---------------------------------------------------------------------------
 
-def test_emotional_fit_shape():
+def test_persona_specificity_shape():
     persona = make_persona()
     candidates = make_norm_emb(15)
-    scores = emotional_fit(candidates, persona)
+    scores = persona_specificity(candidates, persona)
     assert scores.shape == (15,)
 
 
-def test_emotional_fit_in_unit_range():
+def test_persona_specificity_in_unit_range():
     persona = make_persona()
     candidates = make_norm_emb(30)
-    scores = emotional_fit(candidates, persona)
+    scores = persona_specificity(candidates, persona)
     assert scores.min() >= -1e-6
     assert scores.max() <= 1.0 + 1e-6
 
 
 # ---------------------------------------------------------------------------
-# surprise_score
+# familiarity_score
+# ---------------------------------------------------------------------------
+
+def test_familiarity_score_shape():
+    persona = make_persona()
+    candidates = make_norm_emb(12)
+    scores = familiarity_score(candidates, persona)
+    assert scores.shape == (12,)
+
+
+def test_familiarity_score_in_unit_range():
+    persona = make_persona()
+    candidates = make_norm_emb(25)
+    scores = familiarity_score(candidates, persona)
+    assert scores.min() >= -1e-6
+    assert scores.max() <= 1.0 + 1e-6
+
+
+# ---------------------------------------------------------------------------
+# novelty_score
 # ---------------------------------------------------------------------------
 
 def make_artists(n: int, seed: int = 0) -> np.ndarray:
@@ -83,33 +103,33 @@ def make_artists(n: int, seed: int = 0) -> np.ndarray:
     return np.array([rng.choice(all_artists) for _ in range(n)])
 
 
-def test_surprise_score_shape():
+def test_novelty_score_shape():
     candidates = make_norm_emb(10)
     history = make_norm_emb(20, seed=1)
     c_artists = make_artists(10)
     h_artists = make_artists(20, seed=1)
-    scores = surprise_score(candidates, c_artists, history, h_artists)
+    scores = novelty_score(candidates, c_artists, history, h_artists)
     assert scores.shape == (10,)
 
 
-def test_surprise_score_range():
+def test_novelty_score_range():
     candidates = make_norm_emb(20)
     history = make_norm_emb(15, seed=1)
     c_artists = make_artists(20)
     h_artists = make_artists(15, seed=1)
-    scores = surprise_score(candidates, c_artists, history, h_artists)
+    scores = novelty_score(candidates, c_artists, history, h_artists)
     assert scores.min() >= 0.0 - 1e-6
     assert scores.max() <= 1.0 + 1e-6
 
 
-def test_surprise_known_artist_lower_novelty():
+def test_novelty_known_artist_lower_novelty():
     """Known artist should have artist_novelty=0, unknown=1."""
     candidates = make_norm_emb(2)
     history = make_norm_emb(5, seed=1)
     # artist_0 is known, artist_99 is unknown
     c_artists = np.array(["artist_0", "artist_99"])
     h_artists = np.array(["artist_0", "artist_1", "artist_2", "artist_3", "artist_4"])
-    scores = surprise_score(candidates, c_artists, history, h_artists)
+    scores = novelty_score(candidates, c_artists, history, h_artists)
     # Unknown artist score >= known artist score (novelty component)
     assert scores[1] >= scores[0]
 
@@ -148,6 +168,28 @@ def test_score_candidates_custom_weights():
     w = np.array([1.0, 0.0, 0.0, 0.0])
     scores = score_candidates(candidates, c_artists, persona, history, h_artists, weights=w)
     assert scores.shape == (10,)
+
+
+def test_score_candidates_relevance_blend_uses_normalized_relevance():
+    persona = make_persona()
+    candidates = make_norm_emb(4)
+    history = make_norm_emb(8, seed=1)
+    c_artists = make_artists(4)
+    h_artists = make_artists(8, seed=1)
+    relevance = np.array([3.0, 5.0, 9.0, 7.0], dtype=np.float32)
+
+    scores = score_candidates(
+        candidates,
+        c_artists,
+        persona,
+        history,
+        h_artists,
+        relevance_scores=relevance,
+        relevance_blend=1.0,
+    )
+
+    expected = (relevance - relevance.min()) / (relevance.max() - relevance.min())
+    np.testing.assert_allclose(scores, expected, atol=1e-6)
 
 
 # ---------------------------------------------------------------------------

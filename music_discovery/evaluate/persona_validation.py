@@ -12,15 +12,22 @@ from tqdm import tqdm
 
 from sklearn.mixture import GaussianMixture
 from music_discovery.models.gmm import fit_user_persona, bic_curve, UserPersonaModel
-from music_discovery.models.scorer import sonic_fit, emotional_fit, novelty_score, DEFAULT_WEIGHTS
+from music_discovery.models.scorer import DEFAULT_WEIGHTS, optimize_weights, score_candidates
 
 
 def _ndcg_at_k(scores: np.ndarray, relevant_mask: np.ndarray, k: int = 10) -> float:
-    order = np.argsort(-scores)
-    rel = relevant_mask[order].astype(float)
+    finite_mask = np.isfinite(scores)
+    if not finite_mask.any():
+        return 0.0
+
+    order = np.argsort(-scores[finite_mask])
+    rel = relevant_mask[finite_mask][order].astype(float)
     k = min(k, len(rel))
+    if k == 0:
+        return 0.0
+
     dcg = (rel[:k] / np.log2(np.arange(2, k + 2))).sum()
-    ideal = np.sort(relevant_mask.astype(float))[::-1]
+    ideal = np.sort(relevant_mask[finite_mask].astype(float))[::-1]
     idcg = (ideal[:k] / np.log2(np.arange(2, k + 2))).sum()
     return float(dcg / idcg) if idcg > 0 else 0.0
 
@@ -35,6 +42,36 @@ def _classify_user(entropy: float, low_q: float, high_q: float) -> str:
     elif entropy > high_q:
         return "diverse"
     return "mainstream"
+
+
+def _fit_persona_with_k(user_id: str, history_emb: np.ndarray, k: int) -> UserPersonaModel | None:
+    if len(history_emb) < 2:
+        return None
+
+    n_unique = len(np.unique(history_emb, axis=0))
+    k_actual = max(1, min(k, len(history_emb) - 1, n_unique))
+    if k_actual < 1:
+        return None
+
+    try:
+        gmm = GaussianMixture(
+            n_components=k_actual,
+            covariance_type="diag",
+            random_state=42,
+            n_init=1,
+            max_iter=200,
+        )
+        gmm.fit(history_emb)
+        return UserPersonaModel(
+            user_id=user_id,
+            k=k_actual,
+            means=gmm.means_,
+            covariances=gmm.covariances_,
+            weights=gmm.weights_,
+            gmm=gmm,
+        )
+    except Exception:
+        return None
 
 
 def run(
@@ -66,9 +103,14 @@ def run(
 
     train_df = interactions[interactions["split"] == "train"]
     val_df = interactions[interactions["split"] == "val"]
+    test_df = interactions[interactions["split"] == "test"]
 
+    interaction_users = set(interactions["user_id"].unique())
     personas_path = Path(personas_dir)
-    available_users = [d.name for d in personas_path.iterdir() if (d / "persona.pkl").exists()]
+    available_users = [
+        d.name for d in personas_path.iterdir()
+        if (d / "persona.pkl").exists() and d.name in interaction_users
+    ]
     users = available_users[:n_users]
 
     entropies: dict[str, float] = {}
@@ -91,18 +133,34 @@ def run(
     for user_id in tqdm(users, desc="Users"):
         train_songs = set(train_df[train_df["user_id"] == user_id]["song_id"])
         val_songs = set(val_df[val_df["user_id"] == user_id]["song_id"])
+        test_songs = set(test_df[test_df["user_id"] == user_id]["song_id"])
 
         train_idx = np.array([song_to_idx[s] for s in train_songs if s in song_to_idx], dtype=np.intp)
         val_idx = np.array([song_to_idx[s] for s in val_songs if s in song_to_idx], dtype=np.intp)
+        test_idx = np.array([song_to_idx[s] for s in test_songs if s in song_to_idx], dtype=np.intp)
 
-        if len(train_idx) < 10 or len(val_idx) == 0 or user_id not in entropies:
+        if len(train_idx) < 10 or len(test_idx) == 0 or user_id not in entropies:
             continue
 
         history_emb = candidate_emb[train_idx]
         history_artists = candidate_artists[train_idx]
 
-        held_out_mask = np.zeros(len(candidate_emb), dtype=bool)
-        held_out_mask[val_idx] = True
+        eval_mask = np.ones(len(candidate_emb), dtype=bool)
+        eval_mask[train_idx] = False
+        if not eval_mask.any():
+            continue
+
+        val_mask = np.zeros(len(candidate_emb), dtype=bool)
+        val_mask[val_idx] = True
+        val_eval_idx = np.flatnonzero(val_mask & eval_mask)
+        eval_pos_map = {idx: pos for pos, idx in enumerate(np.flatnonzero(eval_mask))}
+        val_positions = np.array([eval_pos_map[idx] for idx in val_eval_idx], dtype=np.intp)
+
+        test_mask = np.zeros(len(candidate_emb), dtype=bool)
+        test_mask[test_idx] = True
+        test_eval_mask = test_mask & eval_mask
+        if not test_eval_mask.any():
+            continue
 
         user_type = _classify_user(entropies[user_id], low_q, high_q)
 
@@ -113,23 +171,49 @@ def run(
         for k_val, bic_val in bic_scores.items():
             bic_records.append({"user_id": user_id, "k": k_val, "bic": bic_val, "user_type": user_type})
 
-        for k in k_range:
-            k_actual = max(1, min(k, len(train_idx) // 2))
-            try:
-                gmm = GaussianMixture(n_components=k_actual, covariance_type="full", random_state=42, n_init=3)
-                gmm.fit(history_emb)
+        candidate_emb_eval = candidate_emb[eval_mask]
+        candidate_artists_eval = candidate_artists[eval_mask]
+        test_mask_eval = test_eval_mask[eval_mask]
 
-                persona = UserPersonaModel(
-                    user_id=user_id, k=k_actual,
-                    means=gmm.means_, covariances=gmm.covariances_,
-                    weights=gmm.weights_, gmm=gmm,
+        for k in k_range:
+            persona = _fit_persona_with_k(user_id, history_emb, k)
+            if persona is None:
+                continue
+
+            weights = DEFAULT_WEIGHTS.copy()
+            if len(val_positions) > 0:
+                try:
+                    weights = optimize_weights(
+                        candidate_emb=candidate_emb_eval,
+                        candidate_artists=candidate_artists_eval,
+                        persona=persona,
+                        user_history_emb=history_emb,
+                        user_history_artists=history_artists,
+                        held_out_indices=val_positions,
+                    )
+                except Exception:
+                    weights = DEFAULT_WEIGHTS.copy()
+
+            try:
+                scores = score_candidates(
+                    candidate_emb=candidate_emb_eval,
+                    candidate_artists=candidate_artists_eval,
+                    persona=persona,
+                    user_history_emb=history_emb,
+                    user_history_artists=history_artists,
+                    weights=weights,
                 )
-                s1 = (sonic_fit(candidate_emb, persona) + 1.0) / 2.0
-                s2 = emotional_fit(candidate_emb, persona)
-                s3 = novelty_score(candidate_emb, candidate_artists, history_emb, history_artists)
-                scores = DEFAULT_WEIGHTS[0] * s1 + DEFAULT_WEIGHTS[1] * s2 + DEFAULT_WEIGHTS[2] * s3
-                ndcg = _ndcg_at_k(scores, held_out_mask)
-                results.append({"user_id": user_id, "k": k, "ndcg": ndcg, "user_type": user_type, "bic_k": bic_k, "is_bic": k == bic_k})
+                ndcg = _ndcg_at_k(scores, test_mask_eval)
+                results.append(
+                    {
+                        "user_id": user_id,
+                        "k": k,
+                        "ndcg": ndcg,
+                        "user_type": user_type,
+                        "bic_k": bic_k,
+                        "is_bic": k == bic_k,
+                    }
+                )
             except Exception:
                 continue
 

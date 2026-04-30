@@ -73,10 +73,15 @@ def run(
     candidate_artists = merged["artist_name"].fillna("").to_numpy()
 
     train_df = interactions[interactions["split"] == "train"]
-    val_df = interactions[interactions["split"] == "val"]
+    val_df   = interactions[interactions["split"] == "val"]
+    test_df  = interactions[interactions["split"] == "test"]
 
+    interaction_users = set(interactions["user_id"].unique())
     personas_path = Path(personas_dir)
-    available_users = [d.name for d in personas_path.iterdir() if (d / "persona.pkl").exists()]
+    available_users = [
+        d.name for d in personas_path.iterdir()
+        if (d / "persona.pkl").exists() and d.name in interaction_users
+    ]
     users = available_users[:n_users]
     print(f"[rec_quality] Evaluating {len(users)} users at K={k}, n_recs={n_recs}")
 
@@ -89,18 +94,21 @@ def run(
         persona = load_persona(personas_path / user_id)
 
         train_songs = set(train_df[train_df["user_id"] == user_id]["song_id"])
-        val_songs = set(val_df[val_df["user_id"] == user_id]["song_id"])
+        val_songs   = set(val_df[val_df["user_id"] == user_id]["song_id"])
+        test_songs  = set(test_df[test_df["user_id"] == user_id]["song_id"])
 
         train_idx = np.array([song_to_idx[s] for s in train_songs if s in song_to_idx], dtype=np.intp)
-        val_idx = np.array([song_to_idx[s] for s in val_songs if s in song_to_idx], dtype=np.intp)
+        val_idx   = np.array([song_to_idx[s] for s in val_songs   if s in song_to_idx], dtype=np.intp)
+        test_idx  = np.array([song_to_idx[s] for s in test_songs  if s in song_to_idx], dtype=np.intp)
 
-        if len(train_idx) == 0:
+        if len(train_idx) == 0 or len(test_idx) == 0:
             continue
 
         history_emb = candidate_emb[train_idx]
         history_artists = candidate_artists[train_idx]
         train_set = set(train_idx.tolist())
-        discovery_set = set(val_idx.tolist())
+        # val used for weight optimization only; test is the reported discovery/NDCG target
+        discovery_set = set(test_idx.tolist())
 
         weights = optimize_weights(
             candidate_emb, candidate_artists, persona,
@@ -151,7 +159,7 @@ def run(
     fig, ax = plt.subplots(figsize=(7, 4))
     ax.bar([f"K={ki}" for ki in ks], disc_vals, color="#4C72B0", alpha=0.85, edgecolor="white")
     ax.set_ylabel("Discovery Rate")
-    ax.set_title("Discovery Rate at K (val holdout)")
+    ax.set_title("Discovery Rate at K (test holdout)")
     ax.set_ylim(0, 1)
     ax.grid(axis="y", alpha=0.3)
     fig.tight_layout()

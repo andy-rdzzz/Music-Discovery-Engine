@@ -5,6 +5,9 @@ from concurrent.futures import ProcessPoolExecutor, as_completed
 
 import numpy as np
 import pandas as pd
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
 from sklearn.metrics.pairwise import cosine_similarity
 from tqdm import tqdm
 
@@ -12,7 +15,7 @@ from tqdm import tqdm
 _W: dict = {}
 
 
-def _init_worker(song_ids, emb, song_to_idx, song_to_artist, pop_idx_order, popularity_ranks, n_songs, p80_threshold, personas_dir, k):
+def _init_worker(song_ids, emb, song_to_idx, song_to_artist, pop_idx_order, popularity_ranks, n_songs, p80_threshold, personas_dir, k, rerank_top_m, song_catalog):
     _W["song_ids"] = song_ids
     _W["emb"] = emb
     _W["song_to_idx"] = song_to_idx
@@ -23,24 +26,36 @@ def _init_worker(song_ids, emb, song_to_idx, song_to_artist, pop_idx_order, popu
     _W["p80_threshold"] = p80_threshold
     _W["personas_dir"] = personas_dir
     _W["k"] = k
+    _W["rerank_top_m"] = rerank_top_m
+    _W["song_catalog"] = song_catalog
 
 
-def _recall_at_k(recommended: list, relevant: set, k: int) -> float:
+def _recall_at_k(recommended: list, relevant: set, k: int, covered_relevant: set | None = None) -> tuple[float, float]:
     if not relevant:
-        return 0.0
-    return sum(1 for r in recommended[:k] if r in relevant) / len(relevant)
+        return 0.0, 0.0
+    hits = sum(1 for r in recommended[:k] if r in relevant)
+    raw = hits / len(relevant)
+    if covered_relevant is None:
+        covered_relevant = relevant
+    adj = hits / len(covered_relevant) if covered_relevant else 0.0
+    return raw, adj
 
 
-def _ndcg_at_k(recommended: list, relevant: set, k: int) -> float:
+def _ndcg_at_k(recommended: list, relevant: set, k: int, covered_relevant: set | None = None) -> tuple[float, float]:
     if not relevant:
-        return 0.0
+        return 0.0, 0.0
     dcg = sum(
         1.0 / np.log2(rank + 2)
         for rank, r in enumerate(recommended[:k])
         if r in relevant
     )
-    idcg = sum(1.0 / np.log2(rank + 2) for rank in range(min(len(relevant), k)))
-    return dcg / idcg if idcg else 0.0
+    idcg_raw = sum(1.0 / np.log2(rank + 2) for rank in range(min(len(relevant), k)))
+    raw = dcg / idcg_raw if idcg_raw else 0.0
+    if covered_relevant is None:
+        covered_relevant = relevant
+    idcg_adj = sum(1.0 / np.log2(rank + 2) for rank in range(min(len(covered_relevant), k)))
+    adj = dcg / idcg_adj if idcg_adj else 0.0
+    return raw, adj
 
 
 def _hit_rate_at_k(recommended: list, relevant: set, k: int) -> float:
@@ -63,6 +78,66 @@ def _build_popularity_ranks(interactions: pd.DataFrame) -> dict[str, int]:
     return {sid: rank for rank, sid in enumerate(counts.index, 1)}
 
 
+def _write_summary_plots(summary: pd.DataFrame, output_dir: str, k: int) -> None:
+    if summary.empty:
+        return
+
+    summary_plot = summary.copy()
+    summary_plot.index = summary_plot.index.astype(str)
+    models = summary_plot.index.tolist()
+
+    raw_adj_pairs = [
+        (f"Recall@{k}", f"Recall_adj@{k}", "Recall"),
+        (f"NDCG@{k}", f"NDCG_adj@{k}", "NDCG"),
+    ]
+    available_pairs = [(raw, adj, label) for raw, adj, label in raw_adj_pairs if raw in summary_plot.columns and adj in summary_plot.columns]
+
+    if available_pairs:
+        fig, axes = plt.subplots(1, len(available_pairs), figsize=(6 * len(available_pairs), 4), squeeze=False)
+        x = np.arange(len(models))
+        width = 0.35
+
+        for ax, (raw_col, adj_col, label) in zip(axes[0], available_pairs):
+            raw_vals = summary_plot[raw_col].to_numpy(dtype=float)
+            adj_vals = summary_plot[adj_col].to_numpy(dtype=float)
+            ax.bar(x - width / 2, raw_vals, width=width, label="Raw", color="#4C72B0")
+            ax.bar(x + width / 2, adj_vals, width=width, label="Adjusted", color="#55A868")
+            ax.set_xticks(x)
+            ax.set_xticklabels(models, rotation=15, ha="right")
+            ax.set_ylim(0, max(1.0, float(np.nanmax(np.r_[raw_vals, adj_vals])) * 1.15))
+            ax.set_title(f"{label}@{k}")
+            ax.grid(axis="y", alpha=0.25)
+            ax.legend()
+
+        fig.suptitle("Holdout Relevance Metrics: Raw vs Coverage-Adjusted")
+        fig.tight_layout()
+        fig.savefig(os.path.join(output_dir, "holdout_adjusted_metrics.png"), dpi=150, bbox_inches="tight")
+        plt.close(fig)
+
+    tradeoff_cols = [
+        ("ILD", "Intra-list Diversity", "#C44E52"),
+        ("long_tail_pct", "Long-tail Share", "#8172B2"),
+        ("mean_popularity_rank", "Mean Popularity Rank", "#CCB974"),
+    ]
+    available_tradeoffs = [(col, title, color) for col, title, color in tradeoff_cols if col in summary_plot.columns]
+    if not available_tradeoffs:
+        return
+
+    fig, axes = plt.subplots(1, len(available_tradeoffs), figsize=(5 * len(available_tradeoffs), 4), squeeze=False)
+    x = np.arange(len(models))
+    for ax, (col, title, color) in zip(axes[0], available_tradeoffs):
+        vals = summary_plot[col].to_numpy(dtype=float)
+        ax.bar(x, vals, color=color, alpha=0.9)
+        ax.set_xticks(x)
+        ax.set_xticklabels(models, rotation=15, ha="right")
+        ax.set_title(title)
+        ax.grid(axis="y", alpha=0.25)
+    fig.suptitle("Holdout Trade-offs: Diversity and Popularity Bias")
+    fig.tight_layout()
+    fig.savefig(os.path.join(output_dir, "holdout_tradeoffs.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+
+
 def _eval_user(uid: str, val_relevant: set, test_relevant: set, train_songs: set, u_vec: np.ndarray | None) -> list[dict]:
     from music_discovery.train.fit_personas import load_persona
     from music_discovery.models.scorer import recommend_diverse, optimize_weights, DEFAULT_WEIGHTS
@@ -77,6 +152,8 @@ def _eval_user(uid: str, val_relevant: set, test_relevant: set, train_songs: set
     p80_threshold    = _W["p80_threshold"]
     personas_dir     = _W["personas_dir"]
     k                = _W["k"]
+    rerank_top_m     = _W["rerank_top_m"]
+    song_catalog     = _W["song_catalog"]
 
     # Fix 2: C-level set difference instead of 374k-iteration Python loop
     train_arr = np.array([song_to_idx[s] for s in train_songs if s in song_to_idx], dtype=np.intp)
@@ -97,13 +174,19 @@ def _eval_user(uid: str, val_relevant: set, test_relevant: set, train_songs: set
                 break
     pop_recs = song_ids[pop_recs_idx].tolist()
 
+    used_als_fallback = u_vec is None or not u_vec.any()
     als_scores = None
-    if u_vec is not None and u_vec.any():
+    if not used_als_fallback:
         als_scores = emb[cand_idx] @ u_vec
         top_pos = np.argsort(als_scores)[::-1][:k]
         als_recs = candidates[top_pos].tolist()
     else:
         als_recs = candidates[:k].tolist()
+
+    covered_val  = val_relevant  & song_catalog
+    covered_test = test_relevant & song_catalog
+    coverage_val  = len(covered_val)  / len(val_relevant)  if val_relevant  else 0.0
+    coverage_test = len(covered_test) / len(test_relevant) if test_relevant else 0.0
 
     try:
         persona = load_persona(os.path.join(personas_dir, uid))
@@ -139,6 +222,7 @@ def _eval_user(uid: str, val_relevant: set, test_relevant: set, train_songs: set
                 n_recs=k,
                 weights=weights,
                 relevance_scores=als_scores,
+                rerank_top_m=rerank_top_m,
             )
             persona_recs = candidates[top_n].tolist()
         except Exception as e:
@@ -152,15 +236,22 @@ def _eval_user(uid: str, val_relevant: set, test_relevant: set, train_songs: set
     def _metrics(recs: list, label: str) -> dict:
         rec_idx = [song_to_idx[s] for s in recs if s in song_to_idx]
         pop_r = [popularity_ranks.get(s, n_songs + 1) for s in recs]
+        recall_raw, recall_adj = _recall_at_k(recs, test_relevant, k, covered_test)
+        ndcg_raw, ndcg_adj = _ndcg_at_k(recs, test_relevant, k, covered_test)
         return {
             "user_id": uid,
             "model": label,
-            f"Recall@{k}": _recall_at_k(recs, test_relevant, k),
-            f"NDCG@{k}": _ndcg_at_k(recs, test_relevant, k),
+            f"Recall@{k}": recall_raw,
+            f"Recall_adj@{k}": recall_adj,
+            f"NDCG@{k}": ndcg_raw,
+            f"NDCG_adj@{k}": ndcg_adj,
             f"HitRate@{k}": _hit_rate_at_k(recs, test_relevant, k),
             "ILD": _intra_list_diversity(rec_idx, emb),
             "mean_popularity_rank": float(np.mean(pop_r)),
             "long_tail_pct": float(np.mean([r > p80_threshold for r in pop_r])),
+            "val_coverage": coverage_val,
+            "test_coverage": coverage_test,
+            "als_fallback": float(used_als_fallback),
         }
 
     return [
@@ -178,6 +269,7 @@ def run(
     k: int = 10,
     n_users: int | None = None,
     n_jobs: int | None = None,
+    rerank_top_m: int | None = 500,
 ) -> pd.DataFrame:
     os.makedirs(output_dir, exist_ok=True)
 
@@ -225,11 +317,30 @@ def run(
     user_to_emb: dict[str, np.ndarray] = {}
     if os.path.exists(user_emb_path):
         udf = pd.read_parquet(user_emb_path)
+        n_emb_users_total = len(udf)
         udf = udf[udf["user_id"].isin(user_set)]
         emb_cols_u = [c for c in udf.columns if c.startswith("emb_")]
         emb_matrix_u = udf[emb_cols_u].to_numpy(dtype=np.float32)
         user_to_emb = dict(zip(udf["user_id"].to_numpy(), emb_matrix_u))
-        print(f"  {len(user_to_emb)} user embeddings loaded")
+        print(f"  {len(user_to_emb)} user embeddings loaded (total in file: {n_emb_users_total})")
+
+        n_interactions_users_total = interactions["user_id"].nunique()
+        if abs(n_interactions_users_total - n_emb_users_total) / max(n_interactions_users_total, 1) > 0.10:
+            print(
+                f"  [warn] Total interaction users ({n_interactions_users_total}) vs total embedding users "
+                f"({n_emb_users_total}) differ by >10%. Artifacts may be from different processing runs."
+            )
+
+        overlap = len(user_to_emb)
+        overlap_ratio = overlap / len(user_set) if user_set else 0.0
+        print(f"  User embedding overlap: {overlap}/{len(user_set)} ({overlap_ratio:.1%})")
+        _MIN_OVERLAP = 0.80
+        if overlap_ratio < _MIN_OVERLAP:
+            raise RuntimeError(
+                f"Artifact mismatch: only {overlap_ratio:.1%} of eval users have embeddings "
+                f"({overlap}/{len(user_set)}). "
+                "Re-run `train als` before evaluating, or check artifact paths."
+            )
 
     print("[holdout_eval] Building per-user song sets...")
     train_filtered = train_df[train_df["user_id"].isin(user_set)]
@@ -252,7 +363,8 @@ def run(
     print(f"[holdout_eval] Evaluating {len(users)} users at k={k} ({workers} workers)...")
     print("[holdout_eval] Note: weights optimized on val, metrics reported on test split")
 
-    init_args = (song_ids, emb, song_to_idx, song_to_artist, pop_idx_order, popularity_ranks, n_songs, p80_threshold, personas_dir, k)
+    song_catalog = set(song_to_idx.keys())
+    init_args = (song_ids, emb, song_to_idx, song_to_artist, pop_idx_order, popularity_ranks, n_songs, p80_threshold, personas_dir, k, rerank_top_m, song_catalog)
 
     rows_out = []
     futures = {}
@@ -282,6 +394,17 @@ def run(
 
     summary = results.groupby("model").mean(numeric_only=True).drop(columns=["user_id"], errors="ignore")
     summary.to_csv(os.path.join(output_dir, "holdout_summary.csv"))
+
+    if "als_fallback" in results.columns:
+        fallback_rate = results["als_fallback"].mean()
+        print(f"[holdout_eval] ALS fallback rate (missing u_vec): {fallback_rate:.1%}")
+
+    if "test_coverage" in results.columns:
+        avg_coverage = results["test_coverage"].mean()
+        print(f"[holdout_eval] Avg test-set song catalog coverage: {avg_coverage:.1%}")
+
+    _write_summary_plots(summary, output_dir, k)
+    print(f"[holdout_eval] Plots → {output_dir}/holdout_adjusted_metrics.png, {output_dir}/holdout_tradeoffs.png")
 
     print("[holdout_eval] Summary:")
     print(summary.to_string())
