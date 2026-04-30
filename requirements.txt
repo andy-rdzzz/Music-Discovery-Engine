@@ -1,4 +1,3 @@
-torch>=2.0
 scikit-learn>=1.3
 pandas>=2.0
 numpy>=1.24
@@ -10,6 +9,7 @@ matplotlib
 seaborn
 umap-learn
 tqdm
-kaggle
-rapidfuzz>=3.0
 pytest
+duckdb
+implicit
+

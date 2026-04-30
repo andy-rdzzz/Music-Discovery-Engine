@@ -3,28 +3,91 @@ from __future__ import annotations
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 
-import numpy as np
+import duckdb
 import pandas as pd
 
 from music_discovery.data.item_bridge import load_item_bridge
 from music_discovery.data.side_info import load_artist_similars, load_song_similars, load_song_tags
-from music_discovery.data.taste_profile import load_taste_profile
 
 
-def _assign_splits(df: pd.DataFrame, holdout_k: int, seed: int = 42) -> pd.Series:
-    """Return a split Series ("train"/"val"/"test") via per-user random holdout."""
-    rng = np.random.default_rng(seed)
-    split = pd.Series("train", index=df.index, dtype="object")
+def _build_interactions(
+    taste_profile_path: str,
+    songs: pd.DataFrame,
+    min_play_count: int,
+    sample_n_users: int | None,
+    holdout_k: int,
+    seed: int = 42,
+) -> pd.DataFrame:
+    con = duckdb.connect()
 
-    for _, group in df.groupby("user_id"):
-        idx = group.index.to_numpy()
-        if len(idx) <= holdout_k * 2:
-            continue  # too few interactions to split; keep all as train
-        shuffled = rng.permutation(idx)
-        split.iloc[shuffled[:holdout_k]] = "val"
-        split.iloc[shuffled[holdout_k : holdout_k * 2]] = "test"
+    # register the songs bridge so DuckDB can join against it
+    con.register("songs_bridge", songs[["song_id"]])
 
-    return split
+    con.execute(f"""
+        CREATE TABLE raw_interactions AS
+        SELECT column0 AS user_id,
+               column1 AS song_id,
+               column2::INTEGER AS play_count,
+               ln(1 + column2::DOUBLE) AS weight
+        FROM read_csv('{taste_profile_path}', delim='\t', header=false)
+        WHERE column2 >= {min_play_count}
+    """)
+
+    if sample_n_users is not None:
+        con.execute(f"""
+            CREATE TABLE sampled AS
+            SELECT r.* FROM raw_interactions r
+            INNER JOIN (
+                SELECT user_id FROM raw_interactions
+                GROUP BY user_id
+                ORDER BY random()
+                LIMIT {sample_n_users}
+            ) s USING (user_id)
+        """)
+        con.execute("DROP TABLE raw_interactions")
+        con.execute("ALTER TABLE sampled RENAME TO raw_interactions")
+
+    # inner join to drop interactions with no metadata
+    con.execute("""
+        CREATE TABLE interactions AS
+        SELECT r.user_id, r.song_id, r.play_count, r.weight
+        FROM raw_interactions r
+        INNER JOIN songs_bridge s USING (song_id)
+    """)
+
+    before = con.execute("SELECT COUNT(*) FROM raw_interactions").fetchone()[0]
+    after  = con.execute("SELECT COUNT(*) FROM interactions").fetchone()[0]
+    print(f"[interactions] Dropped {before - after:,} interactions with no metadata ({after:,} remain)")
+
+    # assign random holdout splits in SQL — no Python loop over users
+    con.execute(f"""
+        CREATE TABLE interactions_split AS
+        WITH ranked AS (
+            SELECT *,
+                   setseed({seed / 2**31}),
+                   ROW_NUMBER() OVER (
+                       PARTITION BY user_id
+                       ORDER BY random()
+                   ) AS rn,
+                   COUNT(*) OVER (PARTITION BY user_id) AS user_n
+            FROM interactions
+        )
+        SELECT user_id, song_id, play_count, weight,
+            CASE
+                WHEN user_n > {holdout_k * 2} AND rn <= {holdout_k}
+                    THEN 'val'
+                WHEN user_n > {holdout_k * 2} AND rn <= {holdout_k * 2}
+                    THEN 'test'
+                ELSE 'train'
+            END AS split
+        FROM ranked
+    """)
+
+    df = con.execute("SELECT * FROM interactions_split").df()
+    counts = df["split"].value_counts().to_dict()
+    print(f"[interactions] Split counts: {counts}")
+    con.close()
+    return df
 
 
 def build(
@@ -43,28 +106,17 @@ def build(
 
     os.makedirs(processed_dir, exist_ok=True)
 
-    print("[interactions] Loading Taste Profile...")
-    interactions = load_taste_profile(
-        taste_profile_path,
-        min_play_count=min_play_count,
-        sample_n_users=sample_n_users,
-    )
-
     print("[interactions] Loading item bridge...")
     songs = load_item_bridge(track_metadata_db, sid_mismatches_path)
 
-    valid_songs = set(songs["song_id"])
-    before = len(interactions)
-    interactions = interactions[interactions["song_id"].isin(valid_songs)].copy()
-    print(
-        f"[interactions] Dropped {before - len(interactions):,} interactions "
-        f"with no metadata ({len(interactions):,} remain)"
+    print("[interactions] Building interactions via DuckDB (read + join + split)...")
+    interactions = _build_interactions(
+        taste_profile_path=taste_profile_path,
+        songs=songs,
+        min_play_count=min_play_count,
+        sample_n_users=sample_n_users,
+        holdout_k=holdout_k,
     )
-
-    print("[interactions] Assigning train/val/test splits...")
-    interactions["split"] = _assign_splits(interactions, holdout_k=holdout_k)
-    split_counts = interactions["split"].value_counts().to_dict()
-    print(f"[interactions] Split counts: {split_counts}")
 
     print("[interactions] Writing core parquets...")
     interactions.to_parquet(os.path.join(processed_dir, "interactions.parquet"), index=False)

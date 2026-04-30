@@ -92,6 +92,9 @@ def profile(
     interactions: str = typer.Option("data/processed/interactions.parquet"),
     song_embeddings: str = typer.Option("models/embeddings/song_embeddings.parquet"),
     output_dir: str = typer.Option("models/personas"),
+    n_jobs: int = typer.Option(0, help="Parallel workers (0 = auto)"),
+    resume: bool = typer.Option(True, help="Skip users that already have persona.pkl"),
+    n_init: int = typer.Option(0, help="GMM random restarts per k (0 = use config)"),
     config: Optional[str] = typer.Option(None, help="Path to default.yaml"),
 ):
     """Fit Gaussian persona models for all users over ALS song embeddings."""
@@ -106,8 +109,11 @@ def profile(
         track_embeddings_path=song_embeddings,
         output_dir=output_dir,
         k_min=gmm_cfg.get("k_min", 2),
-        k_max=gmm_cfg.get("k_max", 10),
-        covariance_type=gmm_cfg.get("covariance_type", "full"),
+        k_max=gmm_cfg.get("k_max", 5),
+        covariance_type=gmm_cfg.get("covariance_type", "diag"),
+        n_init=n_init or gmm_cfg.get("n_init", 1),
+        n_jobs=n_jobs or None,
+        resume=resume,
     )
     typer.echo(f"[profile] Done. Persona models saved to {output_dir}")
 
@@ -215,10 +221,11 @@ def evaluate_holdout(
     output_dir: str = typer.Option("results/holdout"),
     k: int = typer.Option(10, help="Cut-off for @K metrics"),
     n_users: int = typer.Option(0, help="Limit evaluation to N users (0 = all)"),
+    n_jobs: int = typer.Option(0, help="Parallel workers (0 = auto)"),
 ):
     """Leave-k-out holdout evaluation: Recall/NDCG/HitRate + diversity metrics."""
     from music_discovery.evaluate.holdout_eval import run as run_holdout
-    run_holdout(interactions, song_embeddings, personas_dir, output_dir, k, n_users or None)
+    run_holdout(interactions, song_embeddings, personas_dir, output_dir, k, n_users or None, n_jobs or None)
 
 
 @evaluate_app.command("weight-sensitivity")

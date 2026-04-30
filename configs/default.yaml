@@ -7,7 +7,7 @@ data:
   artist_similarity_db: data/raw/artist_similarity.db
   msd_summary_h5: data/raw/msd_summary_file.h5   # optional
   processed_dir: data/processed
-  sample_n_users: null       # null = full dataset; set int for dev subsampling
+  sample_n_users: 2000      # null = full dataset; set int for dev subsampling
   min_play_count: 1          # drop interactions below this threshold
   holdout_k: 10              # interactions randomly withheld per user for val/test
   skip_side_info: false      # set true to skip tags/similars during dev iteration
@@ -20,12 +20,13 @@ als:
 
 gmm:
   k_min: 2
-  k_max: 10
-  covariance_type: full
+  k_max: 5
+  covariance_type: diag
+  n_init: 1
   min_songs_per_user: 20     # fallback to single Gaussian below this
 
 scoring:
-  default_weights: [0.45, 0.30, 0.15, 0.10]   # [sonic_fit, novelty, emotional_fit, familiarity]
+  default_weights: [0.45, 0.30, 0.15, 0.10]   # [sonic_fit, novelty, persona_specificity, familiarity]
 
 recommend:
   persona_temp: 0.7          # tau: <1 flattens allocation, =1 raw proportional

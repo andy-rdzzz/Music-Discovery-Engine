@@ -5,10 +5,9 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "music-discovery"
 version = "0.1.0"
-description = "Popularity-free music discovery engine using metric learning and user persona modeling"
+description = "Popularity-free music discovery engine using ALS and user persona modeling"
 requires-python = ">=3.10"
 dependencies = [
-    "torch>=2.0",
     "scikit-learn>=1.3",
     "pandas>=2.0",
     "numpy>=1.24",
@@ -20,7 +19,8 @@ dependencies = [
     "seaborn",
     "umap-learn",
     "tqdm",
-    "kaggle",
+    "duckdb>=0.10",
+    "implicit",
 ]
 
 [project.scripts]
